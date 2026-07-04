@@ -1,0 +1,620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Order Flow Indicator</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════
+     TOP NAV
+═══════════════════════════════════════════════ -->
+<header class="navbar">
+  <div class="brand">
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#26a69a" stroke-width="2">
+      <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
+      <polyline points="16 7 22 7 22 13"/>
+    </svg>
+    <span>Order Flow Indicator</span>
+  </div>
+
+  <div class="controls">
+    <div class="ctrl-group">
+      <label>Symbol</label>
+      <select id="sel-symbol">
+        {% for s in symbols %}
+        <option value="{{ s }}" {% if s == default_symbol %}selected{% endif %}>{{ s }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>Period</label>
+      <select id="sel-period">
+        {% for p in periods %}
+        <option value="{{ p }}" {% if p == default_period %}selected{% endif %}>{{ p }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="ctrl-group">
+      <label>Interval</label>
+      <select id="sel-interval">
+        {% for i in intervals %}
+        <option value="{{ i }}" {% if i == default_interval %}selected{% endif %}>{{ i }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <button id="btn-load" onclick="loadData()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/>
+      </svg>
+      Load
+    </button>
+  </div>
+
+  <div id="status-pill" class="status-pill">Ready</div>
+</header>
+
+<!-- ═══════════════════════════════════════════════
+     MAIN LAYOUT
+═══════════════════════════════════════════════ -->
+<main class="layout">
+
+  <!-- LEFT: Dashboard sidebar -->
+  <aside class="sidebar" id="sidebar">
+    <div class="card">
+      <div class="card-title">Last Bar</div>
+      <div class="kv-grid" id="last-bar-grid">
+        <span class="k">Symbol</span><span class="v" id="db-symbol">—</span>
+        <span class="k">Date</span><span class="v" id="db-date">—</span>
+        <span class="k">Open</span><span class="v" id="db-open">—</span>
+        <span class="k">High</span><span class="v" id="db-high">—</span>
+        <span class="k">Low</span><span class="v" id="db-low">—</span>
+        <span class="k">Close</span><span class="v" id="db-close">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Order Flow</div>
+      <div class="kv-grid">
+        <span class="k">Bias</span>
+        <span class="v" id="db-bias">—</span>
+        <span class="k">Buy %</span>
+        <div class="bar-wrap">
+          <div class="bar-fill buy" id="bar-buy"></div>
+          <span class="bar-label" id="db-buy">—</span>
+        </div>
+        <span class="k">Sell %</span>
+        <div class="bar-wrap">
+          <div class="bar-fill sell" id="bar-sell"></div>
+          <span class="bar-label" id="db-sell">—</span>
+        </div>
+        <span class="k">Net Delta</span><span class="v" id="db-delta">—</span>
+        <span class="k">Vol Ratio</span><span class="v" id="db-vol">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Zones</div>
+      <div class="kv-grid">
+        <span class="k">Bull OBs</span><span class="v" id="db-bull-ob">—</span>
+        <span class="k">Bear OBs</span><span class="v" id="db-bear-ob">—</span>
+        <span class="k">SSL zones</span><span class="v" id="db-ssl">—</span>
+        <span class="k">BSL zones</span><span class="v" id="db-bsl">—</span>
+        <span class="k">Liq Above</span><span class="v" id="db-liq-hi">—</span>
+        <span class="k">Liq Below</span><span class="v" id="db-liq-lo">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Pressure Distribution</div>
+      <div id="dist-chart" style="height:100px"></div>
+    </div>
+  </aside>
+
+  <!-- RIGHT: Charts -->
+  <section class="chart-area">
+    <div id="loading-overlay" class="loading-overlay">
+      <div class="spinner"></div>
+      <span>Fetching data…</span>
+    </div>
+    <div id="chart-price"  class="chart-panel" style="height:62%"></div>
+    <div id="chart-delta"  class="chart-panel" style="height:22%"></div>
+    <div id="chart-volume" class="chart-panel" style="height:16%"></div>
+  </section>
+
+</main>
+
+<!-- Hover tooltip card (absolute positioned by JS) -->
+<div id="hover-card" class="hover-card" style="display:none"></div>
+
+<script>
+// ═══════════════════════════════════════════════
+//  GLOBALS
+// ═══════════════════════════════════════════════
+let G = {};   // holds all fetched data
+
+const BG       = "#0d1117";
+const GRID     = "#1e2530";
+const TEXT     = "#c9d1d9";
+const GREEN    = "#26a69a";
+const RED      = "#ef5350";
+const ORANGE   = "#ff9800";
+const CYAN     = "#00bcd4";
+const PURPLE   = "#9c27b0";
+const NAVY     = "#131722";
+
+// ═══════════════════════════════════════════════
+//  LOAD DATA
+// ═══════════════════════════════════════════════
+async function loadData() {
+  const symbol   = document.getElementById("sel-symbol").value;
+  const period   = document.getElementById("sel-period").value;
+  const interval = document.getElementById("sel-interval").value;
+
+  setStatus("loading", `Loading ${symbol}…`);
+  showLoading(true);
+
+  try {
+    const res  = await fetch(`/api/data?symbol=${symbol}&period=${period}&interval=${interval}`);
+    const data = await res.json();
+    if (data.error) { setStatus("error", data.error); showLoading(false); return; }
+
+    G = data;
+    renderAll();
+    updateSidebar();
+    setStatus("ok", `${symbol} — ${data.dashboard.bars} bars  (${data.dashboard.date_from} → ${data.dashboard.date_to})`);
+  } catch(e) {
+    setStatus("error", "Network error: " + e.message);
+  }
+  showLoading(false);
+}
+
+// ═══════════════════════════════════════════════
+//  RENDER ALL CHARTS
+// ═══════════════════════════════════════════════
+function renderAll() {
+  renderPrice();
+  renderDelta();
+  renderVolume();
+  renderDistPie();
+}
+</script>
+
+<script>
+// ═══════════════════════════════════════════════
+//  PRICE CHART
+// ═══════════════════════════════════════════════
+function renderPrice() {
+  const c = G.candles;
+  const p = G.pressure;
+  const dates = c.dates;
+  const n = dates.length;
+
+  // ── Candlestick trace ────────────────────────
+  const hoverText = dates.map((d,i) => {
+    const chg    = c.close[i] - c.open[i];
+    const chgPct = ((chg / c.open[i]) * 100).toFixed(2);
+    const arrow  = chg >= 0 ? "▲" : "▼";
+    const col    = chg >= 0 ? GREEN : RED;
+    return [
+      `<b style="color:${col}">${arrow} ${d}</b>`,
+      `<b>O</b> ₹${c.open[i].toFixed(2)}  <b>H</b> ₹${c.high[i].toFixed(2)}`,
+      `<b>L</b> ₹${c.low[i].toFixed(2)}   <b>C</b> ₹${c.close[i].toFixed(2)}`,
+      `<b>Change</b>  ${chg >= 0 ? "+" : ""}${chg.toFixed(2)} (${chgPct}%)`,
+      `<b>Body</b>    ₹${p.body[i].toFixed(2)}`,
+      `<b>Upper wick</b> ₹${p.upper_wick[i].toFixed(2)}`,
+      `<b>Lower wick</b> ₹${p.lower_wick[i].toFixed(2)}`,
+      `<b>Range</b>   ₹${p.range[i].toFixed(2)}`,
+      `─────────────────────`,
+      `<b>Buy press</b>  ${p.buy_pressure[i].toFixed(1)}%`,
+      `<b>Sell press</b> ${p.sell_pressure[i].toFixed(1)}%`,
+      `<b>Net delta</b>  ${p.net_delta[i].toFixed(4)}`,
+      `<b>Vol ratio</b>  ${p.vol_factor[i].toFixed(2)}x`,
+      `<b>Bias</b>  <b style="color:${biasColor(p.pressure_label[i])}">${p.pressure_label[i]}</b>`,
+    ].join("<br>");
+  });
+
+  const candleTrace = {
+    type: "candlestick",
+    x: dates,
+    open: c.open, high: c.high, low: c.low, close: c.close,
+    name: "Price",
+    increasing: { line: { color: GREEN, width: 1 }, fillcolor: GREEN },
+    decreasing: { line: { color: RED,   width: 1 }, fillcolor: RED   },
+    hovertext: hoverText,
+    hoverinfo: "text",
+    hoverlabel: { bgcolor: NAVY, bordercolor: GRID, font: { color: TEXT, size: 12, family: "monospace" } },
+  };
+
+  // ── Shapes: OB boxes + liquidity lines ───────
+  const shapes = [];
+  const annotations = [];
+
+  // Bullish OBs
+  G.order_blocks.bullish.slice(-15).forEach(ob => {
+    shapes.push({
+      type: "rect", xref: "x", yref: "y",
+      x0: ob.date, x1: dates[Math.min(ob.bar_idx + G.config.ob_extend, n-1)],
+      y0: ob.bot,  y1: ob.top,
+      fillcolor: "rgba(38,166,154,0.12)",
+      line: { color: "rgba(38,166,154,0.6)", width: 1 },
+    });
+    annotations.push({
+      xref: "x", yref: "y",
+      x: ob.date, y: ob.top,
+      text: `<b>Bull OB</b>`,
+      showarrow: false,
+      font: { color: GREEN, size: 9 },
+      xanchor: "left", yanchor: "bottom",
+    });
+  });
+
+  // Bearish OBs
+  G.order_blocks.bearish.slice(-15).forEach(ob => {
+    shapes.push({
+      type: "rect", xref: "x", yref: "y",
+      x0: ob.date, x1: dates[Math.min(ob.bar_idx + G.config.ob_extend, n-1)],
+      y0: ob.bot,  y1: ob.top,
+      fillcolor: "rgba(239,83,80,0.12)",
+      line: { color: "rgba(239,83,80,0.6)", width: 1 },
+    });
+    annotations.push({
+      xref: "x", yref: "y",
+      x: ob.date, y: ob.bot,
+      text: `<b>Bear OB</b>`,
+      showarrow: false,
+      font: { color: RED, size: 9 },
+      xanchor: "left", yanchor: "top",
+    });
+  });
+
+  // SSL lines (sell-side liquidity)
+  G.liq_zones.ssl.slice(-12).forEach(z => {
+    shapes.push({
+      type: "line", xref: "x", yref: "y",
+      x0: z.x_start, x1: z.x_end,
+      y0: z.price,   y1: z.price,
+      line: { color: ORANGE, width: 1.5, dash: "dash" },
+    });
+    annotations.push({
+      xref: "x", yref: "y",
+      x: z.x_end, y: z.price,
+      text: `SSL ₹${z.price}`,
+      showarrow: false,
+      font: { color: ORANGE, size: 8 },
+      xanchor: "left", yanchor: "middle",
+    });
+  });
+
+  // BSL lines (buy-side liquidity)
+  G.liq_zones.bsl.slice(-12).forEach(z => {
+    shapes.push({
+      type: "line", xref: "x", yref: "y",
+      x0: z.x_start, x1: z.x_end,
+      y0: z.price,   y1: z.price,
+      line: { color: CYAN, width: 1.5, dash: "dash" },
+    });
+    annotations.push({
+      xref: "x", yref: "y",
+      x: z.x_end, y: z.price,
+      text: `BSL ₹${z.price}`,
+      showarrow: false,
+      font: { color: CYAN, size: 8 },
+      xanchor: "left", yanchor: "middle",
+    });
+  });
+
+  // ── Pressure scatter (BUY/SELL/NEUT labels above candles) ──
+  const buyX = [], buyY = [], buyText = [];
+  const sellX = [], sellY = [], sellText = [];
+  dates.forEach((d, i) => {
+    const lbl = p.pressure_label[i];
+    if (lbl === "▲ BUY") {
+      buyX.push(d);
+      buyY.push(c.high[i] + p.range[i] * 0.35);
+      buyText.push(`<b style="color:${GREEN}">▲ BUY</b><br>Buy: ${p.buy_pressure[i]}%<br>Sell: ${p.sell_pressure[i]}%<br>Δ ${p.net_delta[i].toFixed(4)}<br>Vol: ${p.vol_factor[i].toFixed(2)}x`);
+    } else if (lbl === "▼ SELL") {
+      sellX.push(d);
+      sellY.push(c.low[i] - p.range[i] * 0.35);
+      sellText.push(`<b style="color:${RED}">▼ SELL</b><br>Buy: ${p.buy_pressure[i]}%<br>Sell: ${p.sell_pressure[i]}%<br>Δ ${p.net_delta[i].toFixed(4)}<br>Vol: ${p.vol_factor[i].toFixed(2)}x`);
+    }
+  });
+
+  const buyScatter = {
+    type: "scatter", mode: "text", x: buyX, y: buyY,
+    text: Array(buyX.length).fill("▲"),
+    textfont: { color: GREEN, size: 8 },
+    hovertext: buyText, hoverinfo: "text",
+    hoverlabel: { bgcolor: NAVY, bordercolor: GREEN, font: { color: TEXT, size: 11, family: "monospace" } },
+    name: "Buy Signal", showlegend: true,
+  };
+
+  const sellScatter = {
+    type: "scatter", mode: "text", x: sellX, y: sellY,
+    text: Array(sellX.length).fill("▼"),
+    textfont: { color: RED, size: 8 },
+    hovertext: sellText, hoverinfo: "text",
+    hoverlabel: { bgcolor: NAVY, bordercolor: RED, font: { color: TEXT, size: 11, family: "monospace" } },
+    name: "Sell Signal", showlegend: true,
+  };
+
+  const layout = priceLayout(shapes, annotations);
+  Plotly.react("chart-price", [candleTrace, buyScatter, sellScatter], layout, plotlyConfig());
+}
+</script>
+
+<script>
+// ═══════════════════════════════════════════════
+//  DELTA CHART
+// ═══════════════════════════════════════════════
+function renderDelta() {
+  const p = G.pressure;
+  const dates = G.candles.dates;
+
+  const colors = p.net_delta.map(d => d >= 0 ? "rgba(38,166,154,0.8)" : "rgba(239,83,80,0.8)");
+
+  const hoverText = dates.map((d, i) => [
+    `<b>${d}</b>`,
+    `<b>Net Delta</b>  ${p.net_delta[i].toFixed(4)}`,
+    `<b>Delta MA</b>   ${p.delta_ma[i].toFixed(4)}`,
+    `<b>Buy press</b>  ${p.buy_pressure[i].toFixed(1)}%`,
+    `<b>Sell press</b> ${p.sell_pressure[i].toFixed(1)}%`,
+    `<b>Vol ratio</b>  ${p.vol_factor[i].toFixed(2)}x`,
+    `<b>Bias</b> <span style="color:${biasColor(p.pressure_label[i])}">${p.pressure_label[i]}</span>`,
+  ].join("<br>"));
+
+  const deltaBar = {
+    type: "bar", x: dates, y: p.net_delta,
+    name: "Net Delta",
+    marker: { color: colors },
+    hovertext: hoverText, hoverinfo: "text",
+    hoverlabel: { bgcolor: NAVY, bordercolor: GRID, font: { color: TEXT, size: 11, family: "monospace" } },
+  };
+
+  const maLine = {
+    type: "scatter", mode: "lines",
+    x: dates, y: p.delta_ma,
+    name: "Delta MA",
+    line: { color: PURPLE, width: 1.5, dash: "dot" },
+    hoverinfo: "skip",
+  };
+
+  const zeroLine = {
+    type: "scatter", mode: "lines",
+    x: [dates[0], dates[dates.length-1]], y: [0, 0],
+    line: { color: "#444", width: 1 },
+    hoverinfo: "skip", showlegend: false,
+  };
+
+  const layout = {
+    ...baseLayout(),
+    title: { text: "Net Delta  (Buy − Sell Pressure)", font: { color: "#888", size: 10 }, x: 0.01 },
+    margin: { t: 24, b: 28, l: 60, r: 20 },
+    showlegend: false,
+    xaxis: { ...xAxis(), showticklabels: true, tickfont: { color: "#666", size: 8 } },
+    yaxis: { ...yAxis(), zeroline: false },
+    bargap: 0.15,
+  };
+
+  Plotly.react("chart-delta", [zeroLine, deltaBar, maLine], layout, plotlyConfig());
+}
+
+// ═══════════════════════════════════════════════
+//  VOLUME CHART
+// ═══════════════════════════════════════════════
+function renderVolume() {
+  const c = G.candles;
+  const p = G.pressure;
+  const dates = c.dates;
+
+  const colors = dates.map((_, i) => c.close[i] >= c.open[i] ? "rgba(38,166,154,0.6)" : "rgba(239,83,80,0.6)");
+
+  const hoverText = dates.map((d, i) => [
+    `<b>${d}</b>`,
+    `<b>Volume</b>     ${c.volume[i].toLocaleString()}`,
+    `<b>Vol ratio</b>  ${p.vol_factor[i].toFixed(2)}x avg`,
+  ].join("<br>"));
+
+  const volTrace = {
+    type: "bar", x: dates, y: c.volume,
+    name: "Volume",
+    marker: { color: colors },
+    hovertext: hoverText, hoverinfo: "text",
+    hoverlabel: { bgcolor: NAVY, bordercolor: GRID, font: { color: TEXT, size: 11, family: "monospace" } },
+  };
+
+  const layout = {
+    ...baseLayout(),
+    title: { text: "Volume", font: { color: "#888", size: 10 }, x: 0.01 },
+    margin: { t: 20, b: 30, l: 60, r: 20 },
+    showlegend: false,
+    xaxis: { ...xAxis(), showticklabels: true, tickfont: { color: "#666", size: 8 } },
+    yaxis: { ...yAxis(), zeroline: false },
+    bargap: 0.15,
+  };
+
+  Plotly.react("chart-volume", [volTrace], layout, plotlyConfig());
+}
+
+// ═══════════════════════════════════════════════
+//  DISTRIBUTION PIE
+// ═══════════════════════════════════════════════
+function renderDistPie() {
+  const d = G.dashboard;
+  const trace = {
+    type: "pie",
+    labels: ["▲ BUY", "▼ SELL", "◆ NEUT"],
+    values: [d.dist_buy, d.dist_sell, d.dist_neut],
+    marker: { colors: [GREEN, RED, "#666"] },
+    textfont: { color: TEXT, size: 10 },
+    hovertemplate: "<b>%{label}</b><br>%{value} bars (%{percent})<extra></extra>",
+    hoverlabel: { bgcolor: NAVY, font: { color: TEXT, size: 11, family: "monospace" } },
+    hole: 0.45,
+  };
+  const layout = {
+    paper_bgcolor: "transparent", plot_bgcolor: "transparent",
+    margin: { t: 4, b: 4, l: 4, r: 4 },
+    showlegend: false,
+    font: { color: TEXT, size: 9 },
+  };
+  Plotly.react("dist-chart", [trace], layout, { displayModeBar: false, responsive: true });
+}
+</script>
+
+<script>
+// ═══════════════════════════════════════════════
+//  LAYOUT / CONFIG HELPERS
+// ═══════════════════════════════════════════════
+function baseLayout() {
+  return {
+    paper_bgcolor: BG,
+    plot_bgcolor:  BG,
+    font: { color: TEXT, family: "'Inter', 'Segoe UI', sans-serif", size: 11 },
+    hovermode: "x unified",
+    hoverdistance: 20,
+    spikedistance: 40,
+  };
+}
+
+function xAxis() {
+  return {
+    type: "category",
+    showgrid: true, gridcolor: GRID, gridwidth: 1,
+    zeroline: false,
+    showspikes: true, spikecolor: "#555", spikethickness: 1, spikedash: "dot",
+    tickcolor: "#444", linecolor: "#333",
+    rangeslider: { visible: false },
+  };
+}
+
+function yAxis() {
+  return {
+    showgrid: true, gridcolor: GRID, gridwidth: 1,
+    zeroline: false,
+    showspikes: true, spikecolor: "#555", spikethickness: 1, spikedash: "dot",
+    tickcolor: "#444", linecolor: "#333",
+    tickprefix: "₹",
+    side: "right",
+  };
+}
+
+function priceLayout(shapes, annotations) {
+  return {
+    ...baseLayout(),
+    title: { text: "", },
+    margin: { t: 10, b: 8, l: 10, r: 70 },
+    xaxis: {
+      ...xAxis(),
+      showticklabels: false,
+    },
+    yaxis: { ...yAxis() },
+    shapes,
+    annotations,
+    legend: {
+      bgcolor: "rgba(13,17,23,0.8)", bordercolor: GRID, borderwidth: 1,
+      font: { color: TEXT, size: 10 },
+      x: 0.01, y: 0.99, xanchor: "left", yanchor: "top",
+    },
+    dragmode: "pan",
+  };
+}
+
+function plotlyConfig() {
+  return {
+    responsive: true,
+    displayModeBar: true,
+    modeBarButtonsToRemove: ["select2d", "lasso2d", "autoScale2d"],
+    modeBarButtonsToAdd: [],
+    scrollZoom: true,
+    displaylogo: false,
+    toImageButtonOptions: { format: "png", scale: 2 },
+  };
+}
+
+function biasColor(label) {
+  if (label === "▲ BUY")  return GREEN;
+  if (label === "▼ SELL") return RED;
+  return "#888";
+}
+
+// ═══════════════════════════════════════════════
+//  SIDEBAR UPDATE
+// ═══════════════════════════════════════════════
+function updateSidebar() {
+  const d = G.dashboard;
+
+  document.getElementById("db-symbol").textContent = d.symbol;
+  document.getElementById("db-date").textContent   = d.date_to;
+
+  const chg    = d.last_close - d.last_open;
+  const chgPct = ((chg / d.last_open) * 100).toFixed(2);
+  const col    = chg >= 0 ? GREEN : RED;
+
+  document.getElementById("db-open").innerHTML  = `₹${d.last_open}`;
+  document.getElementById("db-high").innerHTML  = `₹${d.last_high}`;
+  document.getElementById("db-low").innerHTML   = `₹${d.last_low}`;
+  document.getElementById("db-close").innerHTML =
+    `<span style="color:${col}">₹${d.last_close} (${chg>=0?"+":""}${chg.toFixed(2)}, ${chgPct}%)</span>`;
+
+  const biasEl = document.getElementById("db-bias");
+  biasEl.textContent = d.pressure_bias;
+  biasEl.style.color = biasColor(d.pressure_bias);
+  biasEl.style.fontWeight = "bold";
+
+  document.getElementById("db-buy").textContent  = `${d.buy_pct}%`;
+  document.getElementById("db-sell").textContent = `${d.sell_pct}%`;
+  document.getElementById("bar-buy").style.width  = `${Math.min(d.buy_pct, 100)}%`;
+  document.getElementById("bar-sell").style.width = `${Math.min(d.sell_pct, 100)}%`;
+
+  const deltaEl = document.getElementById("db-delta");
+  deltaEl.textContent = d.net_delta.toFixed(4);
+  deltaEl.style.color = d.net_delta >= 0 ? GREEN : RED;
+
+  document.getElementById("db-vol").textContent    = `${d.vol_ratio}x`;
+  document.getElementById("db-bull-ob").textContent = d.bull_obs_count;
+  document.getElementById("db-bear-ob").textContent = d.bear_obs_count;
+  document.getElementById("db-ssl").textContent    = d.ssl_count;
+  document.getElementById("db-bsl").textContent    = d.bsl_count;
+
+  document.getElementById("db-liq-hi").innerHTML =
+    d.liq_above ? `<span style="color:${ORANGE}">SSL ⚠</span>` : "—";
+  document.getElementById("db-liq-lo").innerHTML =
+    d.liq_below ? `<span style="color:${CYAN}">BSL ⚠</span>` : "—";
+}
+
+// ═══════════════════════════════════════════════
+//  STATUS / LOADING
+// ═══════════════════════════════════════════════
+function setStatus(type, msg) {
+  const el = document.getElementById("status-pill");
+  el.textContent = msg;
+  el.className = `status-pill status-${type}`;
+}
+
+function showLoading(show) {
+  document.getElementById("loading-overlay").style.display = show ? "flex" : "none";
+}
+
+// ═══════════════════════════════════════════════
+//  SYNC ZOOM across all 3 charts
+// ═══════════════════════════════════════════════
+["chart-price", "chart-delta", "chart-volume"].forEach(id => {
+  document.getElementById(id).on?.("plotly_relayout", ev => {
+    if (!ev["xaxis.range[0]"]) return;
+    const update = { "xaxis.range[0]": ev["xaxis.range[0]"], "xaxis.range[1]": ev["xaxis.range[1]"] };
+    ["chart-price","chart-delta","chart-volume"].forEach(other => {
+      if (other !== id) Plotly.relayout(other, update).catch(()=>{});
+    });
+  });
+});
+
+// ═══════════════════════════════════════════════
+//  BOOT
+// ═══════════════════════════════════════════════
+window.addEventListener("DOMContentLoaded", () => loadData());
+</script>
+</body>
+</html>
