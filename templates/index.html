@@ -1,78 +1,162 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>Order Flow Indicator</title>
-  <link rel="stylesheet" href="/static/style.css" />
-  <script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Order Flow Indicator</title>
+<link rel="stylesheet" href="/static/style.css"/>
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════════════
-     TOP NAV
-═══════════════════════════════════════════════ -->
+<!-- ══════════════════════════════════════════
+     NAVBAR
+══════════════════════════════════════════ -->
 <header class="navbar">
   <div class="brand">
-    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#26a69a" stroke-width="2">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#26a69a" stroke-width="2">
       <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/>
       <polyline points="16 7 22 7 22 13"/>
     </svg>
-    <span>Order Flow Indicator</span>
+    <span>Order Flow</span>
   </div>
 
-  <div class="controls">
-    <div class="ctrl-group">
-      <label>Symbol</label>
-      <select id="sel-symbol">
-        {% for s in symbols %}
-        <option value="{{ s }}" {% if s == default_symbol %}selected{% endif %}>{{ s }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="ctrl-group">
-      <label>Period</label>
-      <select id="sel-period">
-        {% for p in periods %}
-        <option value="{{ p }}" {% if p == default_period %}selected{% endif %}>{{ p }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <div class="ctrl-group">
-      <label>Interval</label>
-      <select id="sel-interval">
-        {% for i in intervals %}
-        <option value="{{ i }}" {% if i == default_interval %}selected{% endif %}>{{ i }}</option>
-        {% endfor %}
-      </select>
-    </div>
-    <button id="btn-load" onclick="loadData()">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-        <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/>
-      </svg>
-      Load
-    </button>
+  <!-- Symbol search -->
+  <div class="ctrl-group">
+    <select id="sel-symbol" onchange="onSymbolChange()">
+      {% for s in symbols %}
+      <option value="{{ s }}" {% if s == default_symbol %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
   </div>
+
+  <!-- Interval quick-pills -->
+  <div class="interval-pills" id="interval-pills">
+    {% for i in intervals %}
+    <button class="ipill {% if i == default_interval %}active{% endif %}"
+            data-val="{{ i }}"
+            onclick="setInterval('{{ i }}')">{{ interval_labels[i] }}</button>
+    {% endfor %}
+  </div>
+
+  <!-- Period pills -->
+  <div class="period-pills" id="period-pills">
+    {% for p in periods %}
+    <button class="ppill {% if p == default_period %}active{% endif %}"
+            data-val="{{ p }}"
+            onclick="setPeriod('{{ p }}')">{{ period_labels[p] }}</button>
+    {% endfor %}
+  </div>
+
+  <button class="load-btn" id="btn-load" onclick="loadData()">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.51"/>
+    </svg>
+    Load
+  </button>
 
   <div id="status-pill" class="status-pill">Ready</div>
 </header>
 
-<!-- ═══════════════════════════════════════════════
+<!-- ══════════════════════════════════════════
+     CHART TOOLBAR (below nav)
+══════════════════════════════════════════ -->
+<div class="chart-toolbar" id="chart-toolbar">
+
+  <!-- Chart type -->
+  <div class="tb-group">
+    <span class="tb-label">Type</span>
+    <div class="tb-btns">
+      <button class="tb-btn active" id="ct-candle"  onclick="setChartType('candle')" title="Candlestick">
+        <svg width="14" height="14" viewBox="0 0 14 14"><rect x="4" y="3" width="6" height="7" stroke="currentColor" fill="none" stroke-width="1.4"/><line x1="7" y1="1" x2="7" y2="3" stroke="currentColor" stroke-width="1.4"/><line x1="7" y1="10" x2="7" y2="13" stroke="currentColor" stroke-width="1.4"/></svg>
+      </button>
+      <button class="tb-btn" id="ct-bar"    onclick="setChartType('bar')"    title="OHLC Bars">
+        <svg width="14" height="14" viewBox="0 0 14 14"><line x1="7" y1="1" x2="7" y2="13" stroke="currentColor" stroke-width="1.4"/><line x1="3" y1="5" x2="7" y2="5" stroke="currentColor" stroke-width="1.4"/><line x1="7" y1="9" x2="11" y2="9" stroke="currentColor" stroke-width="1.4"/></svg>
+      </button>
+      <button class="tb-btn" id="ct-line"   onclick="setChartType('line')"   title="Line">
+        <svg width="14" height="14" viewBox="0 0 14 14"><polyline points="1,12 5,6 9,9 13,2" stroke="currentColor" fill="none" stroke-width="1.4"/></svg>
+      </button>
+      <button class="tb-btn" id="ct-area"   onclick="setChartType('area')"   title="Area">
+        <svg width="14" height="14" viewBox="0 0 14 14"><polyline points="1,12 5,6 9,9 13,2 13,12 1,12" stroke="currentColor" fill="rgba(38,166,154,0.3)" stroke-width="1.4"/></svg>
+      </button>
+    </div>
+  </div>
+
+  <div class="tb-sep"></div>
+
+  <!-- Overlay toggles -->
+  <div class="tb-group">
+    <span class="tb-label">Overlays</span>
+    <div class="tb-btns">
+      <button class="tb-btn ov-btn active" id="ov-ob"       onclick="toggleOverlay('ob')"        title="Order Blocks">OB</button>
+      <button class="tb-btn ov-btn active" id="ov-liq"      onclick="toggleOverlay('liq')"       title="Liquidity Zones">LIQ</button>
+      <button class="tb-btn ov-btn active" id="ov-pressure" onclick="toggleOverlay('pressure')"  title="Buy/Sell Pressure">PRES</button>
+      <button class="tb-btn ov-btn"        id="ov-ma20"     onclick="toggleOverlay('ma20')"      title="MA 20">MA20</button>
+      <button class="tb-btn ov-btn"        id="ov-ma50"     onclick="toggleOverlay('ma50')"      title="MA 50">MA50</button>
+      <button class="tb-btn ov-btn"        id="ov-ma200"    onclick="toggleOverlay('ma200')"     title="MA 200">MA200</button>
+      <button class="tb-btn ov-btn"        id="ov-ema9"     onclick="toggleOverlay('ema9')"      title="EMA 9">EMA9</button>
+      <button class="tb-btn ov-btn"        id="ov-ema21"    onclick="toggleOverlay('ema21')"     title="EMA 21">EMA21</button>
+      <button class="tb-btn ov-btn"        id="ov-bb"       onclick="toggleOverlay('bb')"        title="Bollinger Bands">BB</button>
+      <button class="tb-btn ov-btn"        id="ov-vwap"     onclick="toggleOverlay('vwap')"      title="VWAP">VWAP</button>
+    </div>
+  </div>
+
+  <div class="tb-sep"></div>
+
+  <!-- FII / DII toggles -->
+  <div class="tb-group">
+    <span class="tb-label">Inst. Flow</span>
+    <div class="tb-btns">
+      <button class="tb-btn fii-btn" id="ov-fii" onclick="toggleOverlay('fii')" title="Foreign Institutional Investors — pending/active order proxy">
+        <span class="fii-dot"></span>FII
+      </button>
+      <button class="tb-btn dii-btn" id="ov-dii" onclick="toggleOverlay('dii')" title="Domestic Institutional Investors — pending/active order proxy">
+        <span class="dii-dot"></span>DII
+      </button>
+    </div>
+  </div>
+
+  <div class="tb-sep"></div>
+
+  <!-- Sub-panel toggles -->
+  <div class="tb-group">
+    <span class="tb-label">Panels</span>
+    <div class="tb-btns">
+      <button class="tb-btn ov-btn active" id="pnl-delta"  onclick="togglePanel('delta')"  title="Net Delta">ΔDELTA</button>
+      <button class="tb-btn ov-btn active" id="pnl-volume" onclick="togglePanel('volume')" title="Volume">VOL</button>
+      <button class="tb-btn ov-btn"        id="pnl-rsi"    onclick="togglePanel('rsi')"    title="RSI">RSI</button>
+      <button class="tb-btn ov-btn"        id="pnl-macd"   onclick="togglePanel('macd')"   title="MACD">MACD</button>
+    </div>
+  </div>
+
+  <div class="tb-sep"></div>
+
+  <!-- Crosshair -->
+  <div class="tb-group">
+    <button class="tb-btn ov-btn" id="btn-crosshair" onclick="toggleCrosshair()" title="Toggle crosshair mode">✛ Cross</button>
+    <button class="tb-btn ov-btn" id="btn-resetzoom" onclick="resetZoom()"       title="Reset zoom">⊡ Reset</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════
      MAIN LAYOUT
-═══════════════════════════════════════════════ -->
+══════════════════════════════════════════ -->
 <main class="layout">
 
-  <!-- LEFT: Dashboard sidebar -->
-  <aside class="sidebar" id="sidebar">
+  <!-- SIDEBAR -->
+  <aside class="sidebar">
+
     <div class="card">
       <div class="card-title">Last Bar</div>
-      <div class="kv-grid" id="last-bar-grid">
-        <span class="k">Symbol</span><span class="v" id="db-symbol">—</span>
-        <span class="k">Date</span><span class="v" id="db-date">—</span>
-        <span class="k">Open</span><span class="v" id="db-open">—</span>
-        <span class="k">High</span><span class="v" id="db-high">—</span>
-        <span class="k">Low</span><span class="v" id="db-low">—</span>
-        <span class="k">Close</span><span class="v" id="db-close">—</span>
+      <div class="kv-grid">
+        <span class="k">Symbol</span> <span class="v mono" id="db-symbol">—</span>
+        <span class="k">Date</span>   <span class="v mono" id="db-date">—</span>
+        <span class="k">Open</span>   <span class="v mono" id="db-open">—</span>
+        <span class="k">High</span>   <span class="v mono green" id="db-high">—</span>
+        <span class="k">Low</span>    <span class="v mono red"   id="db-low">—</span>
+        <span class="k">Close</span>  <span class="v mono" id="db-close">—</span>
+        <span class="k">Volume</span> <span class="v mono" id="db-volume">—</span>
+        <span class="k">ATR(14)</span><span class="v mono" id="db-atr">—</span>
       </div>
     </div>
 
@@ -80,541 +164,682 @@
       <div class="card-title">Order Flow</div>
       <div class="kv-grid">
         <span class="k">Bias</span>
-        <span class="v" id="db-bias">—</span>
+        <span class="v mono bold" id="db-bias">—</span>
         <span class="k">Buy %</span>
-        <div class="bar-wrap">
-          <div class="bar-fill buy" id="bar-buy"></div>
-          <span class="bar-label" id="db-buy">—</span>
-        </div>
+        <div class="bar-wrap"><div class="bar-fill buy" id="bar-buy"></div><span class="bar-label" id="db-buy">—</span></div>
         <span class="k">Sell %</span>
-        <div class="bar-wrap">
-          <div class="bar-fill sell" id="bar-sell"></div>
-          <span class="bar-label" id="db-sell">—</span>
-        </div>
-        <span class="k">Net Delta</span><span class="v" id="db-delta">—</span>
-        <span class="k">Vol Ratio</span><span class="v" id="db-vol">—</span>
+        <div class="bar-wrap"><div class="bar-fill sell" id="bar-sell"></div><span class="bar-label" id="db-sell">—</span></div>
+        <span class="k">Net Δ</span>  <span class="v mono" id="db-delta">—</span>
+        <span class="k">Vol Ratio</span><span class="v mono" id="db-vol">—</span>
       </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Technicals</div>
+      <div class="kv-grid">
+        <span class="k">RSI(14)</span> <span class="v mono" id="db-rsi">—</span>
+        <span class="k">MACD</span>    <span class="v mono" id="db-macd">—</span>
+        <span class="k">MA20</span>    <span class="v mono" id="db-ma20">—</span>
+        <span class="k">MA50</span>    <span class="v mono" id="db-ma50">—</span>
+        <span class="k">MA200</span>   <span class="v mono" id="db-ma200">—</span>
+        <span class="k">BB Upper</span><span class="v mono" id="db-bbu">—</span>
+        <span class="k">BB Lower</span><span class="v mono" id="db-bbl">—</span>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Inst. Flow (Proxy)</div>
+      <div class="fii-dii-row">
+        <div class="fii-box">
+          <div class="inst-label fii-label">FII</div>
+          <div class="inst-val" id="db-fii">—</div>
+          <div class="inst-sub">Foreign Inst.</div>
+        </div>
+        <div class="dii-box">
+          <div class="inst-label dii-label">DII</div>
+          <div class="inst-val" id="db-dii">—</div>
+          <div class="inst-sub">Domestic Inst.</div>
+        </div>
+      </div>
+      <div class="inst-note">* Proxy via volume decile. Not live order book data.</div>
     </div>
 
     <div class="card">
       <div class="card-title">Zones</div>
       <div class="kv-grid">
-        <span class="k">Bull OBs</span><span class="v" id="db-bull-ob">—</span>
-        <span class="k">Bear OBs</span><span class="v" id="db-bear-ob">—</span>
-        <span class="k">SSL zones</span><span class="v" id="db-ssl">—</span>
-        <span class="k">BSL zones</span><span class="v" id="db-bsl">—</span>
-        <span class="k">Liq Above</span><span class="v" id="db-liq-hi">—</span>
-        <span class="k">Liq Below</span><span class="v" id="db-liq-lo">—</span>
+        <span class="k">Bull OBs</span> <span class="v mono green" id="db-bull-ob">—</span>
+        <span class="k">Bear OBs</span> <span class="v mono red"   id="db-bear-ob">—</span>
+        <span class="k">SSL</span>      <span class="v mono orange" id="db-ssl">—</span>
+        <span class="k">BSL</span>      <span class="v mono cyan"   id="db-bsl">—</span>
+        <span class="k">Liq Above</span><span class="v mono" id="db-liq-hi">—</span>
+        <span class="k">Liq Below</span><span class="v mono" id="db-liq-lo">—</span>
       </div>
     </div>
 
     <div class="card">
       <div class="card-title">Pressure Distribution</div>
-      <div id="dist-chart" style="height:100px"></div>
+      <div id="dist-chart" style="height:90px"></div>
+      <div class="dist-legend" id="dist-legend"></div>
     </div>
+
   </aside>
 
-  <!-- RIGHT: Charts -->
-  <section class="chart-area">
-    <div id="loading-overlay" class="loading-overlay">
+  <!-- CHART AREA -->
+  <section class="chart-area" id="chart-area">
+    <div id="loading-overlay" class="loading-overlay" style="display:none">
       <div class="spinner"></div>
-      <span>Fetching data…</span>
+      <span id="loading-msg">Fetching data…</span>
     </div>
-    <div id="chart-price"  class="chart-panel" style="height:62%"></div>
-    <div id="chart-delta"  class="chart-panel" style="height:22%"></div>
-    <div id="chart-volume" class="chart-panel" style="height:16%"></div>
+    <div id="chart-price"  class="chart-panel"></div>
+    <div id="chart-delta"  class="chart-panel sub-panel"></div>
+    <div id="chart-volume" class="chart-panel sub-panel"></div>
+    <div id="chart-rsi"    class="chart-panel sub-panel" style="display:none"></div>
+    <div id="chart-macd"   class="chart-panel sub-panel" style="display:none"></div>
   </section>
-
 </main>
 
-<!-- Hover tooltip card (absolute positioned by JS) -->
-<div id="hover-card" class="hover-card" style="display:none"></div>
-
 <script>
-// ═══════════════════════════════════════════════
-//  GLOBALS
-// ═══════════════════════════════════════════════
-let G = {};   // holds all fetched data
+// ══════════════════════════════════════════
+// CONSTANTS
+// ══════════════════════════════════════════
+const BG='#0d1117',GRID='#1e2530',TEXT='#c9d1d9',GREEN='#26a69a',RED='#ef5350';
+const ORANGE='#ff9800',CYAN='#00bcd4',PURPLE='#9c27b0',NAVY='#131722';
+const YELLOW='#ffd54f',PINK='#f48fb1',LIME='#aed581',BLUE='#42a5f5';
 
-const BG       = "#0d1117";
-const GRID     = "#1e2530";
-const TEXT     = "#c9d1d9";
-const GREEN    = "#26a69a";
-const RED      = "#ef5350";
-const ORANGE   = "#ff9800";
-const CYAN     = "#00bcd4";
-const PURPLE   = "#9c27b0";
-const NAVY     = "#131722";
+// State
+let G={};
+let CHART_TYPE='candle';
+let OVERLAYS={ob:true,liq:true,pressure:true,ma20:false,ma50:false,ma200:false,
+              ema9:false,ema21:false,bb:false,vwap:false,fii:false,dii:false};
+let PANELS={delta:true,volume:true,rsi:false,macd:false};
+let CROSSHAIR=false;
+let CUR_SYMBOL='RELIANCE.NS', CUR_PERIOD='3mo', CUR_INTERVAL='1d';
 
-// ═══════════════════════════════════════════════
-//  LOAD DATA
-// ═══════════════════════════════════════════════
-async function loadData() {
-  const symbol   = document.getElementById("sel-symbol").value;
-  const period   = document.getElementById("sel-period").value;
-  const interval = document.getElementById("sel-interval").value;
+// ══════════════════════════════════════════
+// CONTROL HELPERS
+// ══════════════════════════════════════════
+function setInterval(v){
+  CUR_INTERVAL=v;
+  document.querySelectorAll('.ipill').forEach(b=>b.classList.toggle('active',b.dataset.val===v));
+}
+function setPeriod(v){
+  CUR_PERIOD=v;
+  document.querySelectorAll('.ppill').forEach(b=>b.classList.toggle('active',b.dataset.val===v));
+}
+function onSymbolChange(){ CUR_SYMBOL=document.getElementById('sel-symbol').value; }
 
-  setStatus("loading", `Loading ${symbol}…`);
-  showLoading(true);
+function setChartType(t){
+  CHART_TYPE=t;
+  ['candle','bar','line','area'].forEach(x=>{
+    document.getElementById('ct-'+x).classList.toggle('active',x===t);
+  });
+  if(Object.keys(G).length) renderPrice();
+}
 
-  try {
-    const res  = await fetch(`/api/data?symbol=${symbol}&period=${period}&interval=${interval}`);
-    const data = await res.json();
-    if (data.error) { setStatus("error", data.error); showLoading(false); return; }
+function toggleOverlay(k){
+  OVERLAYS[k]=!OVERLAYS[k];
+  const btn=document.getElementById('ov-'+k);
+  if(btn) btn.classList.toggle('active',OVERLAYS[k]);
+  if(Object.keys(G).length) renderPrice();
+}
 
-    G = data;
+function togglePanel(k){
+  PANELS[k]=!PANELS[k];
+  const btn=document.getElementById('pnl-'+k);
+  if(btn) btn.classList.toggle('active',PANELS[k]);
+  const el=document.getElementById('chart-'+k);
+  if(el){ el.style.display=PANELS[k]?'':'none'; }
+  sizePanels();
+  if(Object.keys(G).length){
+    if(k==='delta') renderDelta();
+    if(k==='volume') renderVolume();
+    if(k==='rsi') renderRSI();
+    if(k==='macd') renderMACD();
+  }
+}
+
+function toggleCrosshair(){
+  CROSSHAIR=!CROSSHAIR;
+  document.getElementById('btn-crosshair').classList.toggle('active',CROSSHAIR);
+  const mode=CROSSHAIR?'x unified':'closest';
+  ['chart-price','chart-delta','chart-volume','chart-rsi','chart-macd'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el && el._fullLayout) Plotly.relayout(id,{hovermode:mode});
+  });
+}
+
+function resetZoom(){
+  ['chart-price','chart-delta','chart-volume','chart-rsi','chart-macd'].forEach(id=>{
+    const el=document.getElementById(id);
+    if(el && el.data) Plotly.relayout(id,{'xaxis.autorange':true,'yaxis.autorange':true});
+  });
+}
+
+// ══════════════════════════════════════════
+// PANEL SIZING
+// ══════════════════════════════════════════
+function sizePanels(){
+  const active=Object.keys(PANELS).filter(k=>PANELS[k]);
+  const priceH=60, subH=Math.floor(40/Math.max(active.length,1));
+  document.getElementById('chart-price').style.height=priceH+'%';
+  active.forEach(k=>{
+    const el=document.getElementById('chart-'+k);
+    if(el) el.style.height=subH+'%';
+  });
+}
+
+// ══════════════════════════════════════════
+// STATUS / LOADING
+// ══════════════════════════════════════════
+function setStatus(type,msg){
+  const el=document.getElementById('status-pill');
+  el.textContent=msg; el.className='status-pill status-'+type;
+}
+function showLoading(show,msg='Fetching data…'){
+  const ol=document.getElementById('loading-overlay');
+  ol.style.display=show?'flex':'none';
+  document.getElementById('loading-msg').textContent=msg;
+}
+
+// ══════════════════════════════════════════
+// LOAD DATA
+// ══════════════════════════════════════════
+async function loadData(){
+  CUR_SYMBOL=document.getElementById('sel-symbol').value;
+  setStatus('loading',`Loading ${CUR_SYMBOL}…`);
+  showLoading(true,`Fetching ${CUR_SYMBOL} — ${CUR_PERIOD} @ ${CUR_INTERVAL}…`);
+  document.getElementById('btn-load').disabled=true;
+  try{
+    const url=`/api/data?symbol=${CUR_SYMBOL}&period=${CUR_PERIOD}&interval=${CUR_INTERVAL}`;
+    const res=await fetch(url);
+    const data=await res.json();
+    if(data.error){ setStatus('error',data.error); showLoading(false); return; }
+    G=data;
+    sizePanels();
     renderAll();
     updateSidebar();
-    setStatus("ok", `${symbol} — ${data.dashboard.bars} bars  (${data.dashboard.date_from} → ${data.dashboard.date_to})`);
-  } catch(e) {
-    setStatus("error", "Network error: " + e.message);
-  }
+    setStatus('ok',`${CUR_SYMBOL}  ${data.dashboard.bars} bars  ${data.dashboard.date_from} → ${data.dashboard.date_to}`);
+  }catch(e){ setStatus('error','Network error: '+e.message); }
   showLoading(false);
+  document.getElementById('btn-load').disabled=false;
 }
 
-// ═══════════════════════════════════════════════
-//  RENDER ALL CHARTS
-// ═══════════════════════════════════════════════
-function renderAll() {
+function renderAll(){
   renderPrice();
-  renderDelta();
-  renderVolume();
+  if(PANELS.delta)  renderDelta();
+  if(PANELS.volume) renderVolume();
+  if(PANELS.rsi)    renderRSI();
+  if(PANELS.macd)   renderMACD();
   renderDistPie();
+  bindZoomSync();
 }
+
+window.addEventListener('DOMContentLoaded',()=>loadData());
 </script>
 
 <script>
-// ═══════════════════════════════════════════════
-//  PRICE CHART
-// ═══════════════════════════════════════════════
-function renderPrice() {
-  const c = G.candles;
-  const p = G.pressure;
-  const dates = c.dates;
-  const n = dates.length;
+// ══════════════════════════════════════════
+// LAYOUT HELPERS
+// ══════════════════════════════════════════
+function baseLayout(extra={}){
+  return {paper_bgcolor:BG,plot_bgcolor:BG,
+    font:{color:TEXT,family:"'Inter','Segoe UI',sans-serif",size:11},
+    hovermode:CROSSHAIR?'x unified':'x unified',
+    hoverdistance:30,spikedistance:50,...extra};
+}
+function xAx(showLabels=true){
+  return {type:'category',showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
+    showspikes:true,spikecolor:'#4a5568',spikethickness:1,spikedash:'solid',spikemode:'across',
+    tickcolor:'#333',linecolor:'#222',
+    tickfont:{color:'#6b7280',size:9},
+    showticklabels:showLabels,rangeslider:{visible:false},
+    automargin:true};
+}
+function yAx(prefix='₹',right=true){
+  return {showgrid:true,gridcolor:GRID,gridwidth:1,zeroline:false,
+    showspikes:true,spikecolor:'#4a5568',spikethickness:1,spikedash:'solid',spikemode:'across',
+    tickcolor:'#333',linecolor:'#222',
+    tickfont:{color:'#6b7280',size:9},
+    tickprefix:prefix,side:right?'right':'left',automargin:true};
+}
+function pltCfg(){
+  return {responsive:true,displayModeBar:true,scrollZoom:true,displaylogo:false,
+    modeBarButtonsToRemove:['select2d','lasso2d'],
+    toImageButtonOptions:{format:'png',scale:2,filename:'order-flow-chart'}};
+}
+function biasColor(l){ return l==='▲ BUY'?GREEN:l==='▼ SELL'?RED:'#888'; }
+function fmt(n,dec=2){ return n!=null&&!isNaN(n)?Number(n).toFixed(dec):'—'; }
+function fmtVol(v){ return v>=1e7?(v/1e7).toFixed(2)+'Cr':v>=1e5?(v/1e5).toFixed(2)+'L':v.toLocaleString('en-IN'); }
+</script>
 
-  // ── Candlestick trace ────────────────────────
-  const hoverText = dates.map((d,i) => {
-    const chg    = c.close[i] - c.open[i];
-    const chgPct = ((chg / c.open[i]) * 100).toFixed(2);
-    const arrow  = chg >= 0 ? "▲" : "▼";
-    const col    = chg >= 0 ? GREEN : RED;
+<script>
+// ══════════════════════════════════════════
+// PRICE CHART
+// ══════════════════════════════════════════
+function renderPrice(){
+  const c=G.candles, p=G.pressure, t=G.technicals, f=G.fii_dii;
+  const dates=c.dates, n=dates.length;
+  const traces=[], shapes=[], anns=[];
+
+  // ── Rich hover text ─────────────────────
+  const hov=dates.map((d,i)=>{
+    const chg=c.close[i]-c.open[i], pct=((chg/c.open[i])*100).toFixed(2);
+    const col=chg>=0?GREEN:RED, ar=chg>=0?'▲':'▼';
+    const rsi=t.rsi[i], rsiCol=rsi>=70?RED:rsi<=30?GREEN:'#aaa';
+    const macdH=t.macd_hist[i], macdCol=macdH>=0?GREEN:RED;
     return [
-      `<b style="color:${col}">${arrow} ${d}</b>`,
-      `<b>O</b> ₹${c.open[i].toFixed(2)}  <b>H</b> ₹${c.high[i].toFixed(2)}`,
-      `<b>L</b> ₹${c.low[i].toFixed(2)}   <b>C</b> ₹${c.close[i].toFixed(2)}`,
-      `<b>Change</b>  ${chg >= 0 ? "+" : ""}${chg.toFixed(2)} (${chgPct}%)`,
-      `<b>Body</b>    ₹${p.body[i].toFixed(2)}`,
-      `<b>Upper wick</b> ₹${p.upper_wick[i].toFixed(2)}`,
-      `<b>Lower wick</b> ₹${p.lower_wick[i].toFixed(2)}`,
-      `<b>Range</b>   ₹${p.range[i].toFixed(2)}`,
-      `─────────────────────`,
-      `<b>Buy press</b>  ${p.buy_pressure[i].toFixed(1)}%`,
-      `<b>Sell press</b> ${p.sell_pressure[i].toFixed(1)}%`,
-      `<b>Net delta</b>  ${p.net_delta[i].toFixed(4)}`,
-      `<b>Vol ratio</b>  ${p.vol_factor[i].toFixed(2)}x`,
-      `<b>Bias</b>  <b style="color:${biasColor(p.pressure_label[i])}">${p.pressure_label[i]}</b>`,
-    ].join("<br>");
+      `<b style="color:${col}">${ar} ${d}</b>`,
+      `────────────────────────────`,
+      `<b>O</b> ₹${fmt(c.open[i])}  <b>H</b> ₹${fmt(c.high[i])}`,
+      `<b>L</b> ₹${fmt(c.low[i])}   <b>C</b> ₹${fmt(c.close[i])}`,
+      `<b>Change</b>  <span style="color:${col}">${chg>=0?'+':''}${fmt(chg)} (${chg>=0?'+':''}${pct}%)</span>`,
+      `<b>Volume</b>  ${fmtVol(c.volume[i])}  (${fmt(p.vol_factor[i],2)}x avg)`,
+      `────────────────────────────`,
+      `<b>Body</b>     ₹${fmt(p.body[i])}  |  <b>Range</b> ₹${fmt(p.range[i])}`,
+      `<b>Up wick</b>  ₹${fmt(p.upper_wick[i])}  |  <b>Lo wick</b> ₹${fmt(p.lower_wick[i])}`,
+      `────────────────────────────`,
+      `<b>Buy Press</b>  ${fmt(p.buy_pressure[i],1)}%  |  <b>Sell Press</b> ${fmt(p.sell_pressure[i],1)}%`,
+      `<b>Net Δ</b>     <span style="color:${p.net_delta[i]>=0?GREEN:RED}">${fmt(p.net_delta[i],4)}</span>`,
+      `<b>Bias</b>      <b style="color:${biasColor(p.pressure_label[i])}">${p.pressure_label[i]}</b>`,
+      `────────────────────────────`,
+      `<b>RSI(14)</b>  <span style="color:${rsiCol}">${fmt(rsi,1)}</span>  |  <b>ATR</b> ₹${fmt(t.atr[i])}`,
+      `<b>MACD Hist</b> <span style="color:${macdCol}">${fmt(macdH,4)}</span>`,
+      `<b>MA20</b> ₹${fmt(t.ma20[i])}  <b>MA50</b> ₹${fmt(t.ma50[i])}`,
+      `<b>BB</b> ₹${fmt(t.bb_lower[i])} — ₹${fmt(t.bb_upper[i])}`,
+      `────────────────────────────`,
+      `<b>FII proxy</b> ${f.fii_net[i]>=0?'<span style="color:'+GREEN+'">BUY '+f.fii_net[i]+'</span>':'<span style="color:'+RED+'">SELL '+Math.abs(f.fii_net[i])+'</span>'}`,
+      `<b>DII proxy</b> ${f.dii_net[i]>=0?'<span style="color:'+GREEN+'">BUY '+f.dii_net[i]+'</span>':'<span style="color:'+RED+'">SELL '+Math.abs(f.dii_net[i])+'</span>'}`,
+    ].join('<br>');
   });
 
-  const candleTrace = {
-    type: "candlestick",
-    x: dates,
-    open: c.open, high: c.high, low: c.low, close: c.close,
-    name: "Price",
-    increasing: { line: { color: GREEN, width: 1 }, fillcolor: GREEN },
-    decreasing: { line: { color: RED,   width: 1 }, fillcolor: RED   },
-    hovertext: hoverText,
-    hoverinfo: "text",
-    hoverlabel: { bgcolor: NAVY, bordercolor: GRID, font: { color: TEXT, size: 12, family: "monospace" } },
+  // ── Main price trace ────────────────────
+  if(CHART_TYPE==='candle'){
+    traces.push({type:'candlestick',x:dates,open:c.open,high:c.high,low:c.low,close:c.close,
+      name:'Price',
+      increasing:{line:{color:GREEN,width:1},fillcolor:GREEN},
+      decreasing:{line:{color:RED,  width:1},fillcolor:RED},
+      hovertext:hov,hoverinfo:'text',whiskerwidth:0.2,
+      hoverlabel:{bgcolor:NAVY,bordercolor:'#2d3748',font:{color:TEXT,size:11,family:'monospace'}}});
+  } else if(CHART_TYPE==='bar'){
+    traces.push({type:'ohlc',x:dates,open:c.open,high:c.high,low:c.low,close:c.close,
+      name:'Price',
+      increasing:{line:{color:GREEN}},decreasing:{line:{color:RED}},
+      hovertext:hov,hoverinfo:'text',
+      hoverlabel:{bgcolor:NAVY,bordercolor:'#2d3748',font:{color:TEXT,size:11,family:'monospace'}}});
+  } else if(CHART_TYPE==='line'){
+    traces.push({type:'scatter',mode:'lines',x:dates,y:c.close,name:'Close',
+      line:{color:GREEN,width:1.5},hovertext:hov,hoverinfo:'text',
+      hoverlabel:{bgcolor:NAVY,bordercolor:'#2d3748',font:{color:TEXT,size:11,family:'monospace'}}});
+  } else {
+    traces.push({type:'scatter',mode:'lines',x:dates,y:c.close,name:'Close',
+      fill:'tozeroy',fillcolor:'rgba(38,166,154,0.08)',line:{color:GREEN,width:1.5},
+      hovertext:hov,hoverinfo:'text',
+      hoverlabel:{bgcolor:NAVY,bordercolor:'#2d3748',font:{color:TEXT,size:11,family:'monospace'}}});
+  }
+
+  // ── MA overlays ─────────────────────────
+  const maSpec=[
+    {k:'ma20', data:t.ma20,  color:'#ffd54f', dash:'solid', w:1.2},
+    {k:'ma50', data:t.ma50,  color:'#42a5f5', dash:'solid', w:1.2},
+    {k:'ma200',data:t.ma200, color:'#f48fb1', dash:'solid', w:1.5},
+    {k:'ema9', data:t.ema9,  color:'#aed581', dash:'dot',   w:1},
+    {k:'ema21',data:t.ema21, color:'#ff8a65', dash:'dot',   w:1},
+  ];
+  maSpec.forEach(m=>{
+    if(!OVERLAYS[m.k]) return;
+    traces.push({type:'scatter',mode:'lines',x:dates,y:m.data,name:m.k.toUpperCase(),
+      line:{color:m.color,width:m.w,dash:m.dash},hoverinfo:'skip',showlegend:true});
+  });
+
+  // ── Bollinger Bands ─────────────────────
+  if(OVERLAYS.bb){
+    traces.push({type:'scatter',mode:'lines',x:dates,y:t.bb_upper,name:'BB Upper',
+      line:{color:'rgba(156,39,176,0.7)',width:1,dash:'dot'},hoverinfo:'skip'});
+    traces.push({type:'scatter',mode:'lines',x:dates,y:t.bb_lower,name:'BB Lower',
+      fill:'tonexty',fillcolor:'rgba(156,39,176,0.06)',
+      line:{color:'rgba(156,39,176,0.7)',width:1,dash:'dot'},hoverinfo:'skip'});
+    traces.push({type:'scatter',mode:'lines',x:dates,y:t.bb_mid,name:'BB Mid',
+      line:{color:'rgba(156,39,176,0.4)',width:1},hoverinfo:'skip'});
+  }
+
+  // ── VWAP ────────────────────────────────
+  if(OVERLAYS.vwap){
+    traces.push({type:'scatter',mode:'lines',x:dates,y:t.vwap,name:'VWAP',
+      line:{color:'#e040fb',width:1.5,dash:'dashdot'},hoverinfo:'skip'});
+  }
+
+  // ── FII markers ─────────────────────────
+  if(OVERLAYS.fii){
+    const fxB=[],fyB=[],fxS=[],fyS=[],ftB=[],ftS=[];
+    dates.forEach((d,i)=>{
+      const v=f.fii_net[i];
+      if(v>0){fxB.push(d);fyB.push(c.high[i]+p.range[i]*0.5);
+        ftB.push(`<b style="color:#00e5ff">FII BUY</b><br>Score: ${v}<br>Vol: ${fmtVol(c.volume[i])}<br>Body: ₹${fmt(p.body[i])}`)}
+      else if(v<0){fxS.push(d);fyS.push(c.low[i]-p.range[i]*0.5);
+        ftS.push(`<b style="color:#ff5252">FII SELL</b><br>Score: ${Math.abs(v)}<br>Vol: ${fmtVol(c.volume[i])}<br>Body: ₹${fmt(p.body[i])}`)}
+    });
+    if(fxB.length) traces.push({type:'scatter',mode:'markers',x:fxB,y:fyB,name:'FII Buy',
+      marker:{symbol:'triangle-up',size:10,color:'#00e5ff',opacity:0.9},
+      hovertext:ftB,hoverinfo:'text',
+      hoverlabel:{bgcolor:NAVY,bordercolor:'#00e5ff',font:{color:TEXT,size:11,family:'monospace'}}});
+    if(fxS.length) traces.push({type:'scatter',mode:'markers',x:fxS,y:fyS,name:'FII Sell',
+      marker:{symbol:'triangle-down',size:10,color:'#ff5252',opacity:0.9},
+      hovertext:ftS,hoverinfo:'text',
+      hoverlabel:{bgcolor:NAVY,bordercolor:'#ff5252',font:{color:TEXT,size:11,family:'monospace'}}});
+  }
+
+  // ── DII markers ─────────────────────────
+  if(OVERLAYS.dii){
+    const dxB=[],dyB=[],dxS=[],dyS=[],dtB=[],dtS=[];
+    dates.forEach((d,i)=>{
+      const v=f.dii_net[i];
+      if(v>0){dxB.push(d);dyB.push(c.high[i]+p.range[i]*0.8);
+        dtB.push(`<b style="color:#69f0ae">DII BUY</b><br>Score: ${v}<br>Vol: ${fmtVol(c.volume[i])}`)}
+      else if(v<0){dxS.push(d);dyS.push(c.low[i]-p.range[i]*0.8);
+        dtS.push(`<b style="color:#ff8a80">DII SELL</b><br>Score: ${Math.abs(v)}<br>Vol: ${fmtVol(c.volume[i])}`)}
+    });
+    if(dxB.length) traces.push({type:'scatter',mode:'markers',x:dxB,y:dyB,name:'DII Buy',
+      marker:{symbol:'diamond',size:8,color:'#69f0ae',opacity:0.8},
+      hovertext:dtB,hoverinfo:'text',
+      hoverlabel:{bgcolor:NAVY,bordercolor:'#69f0ae',font:{color:TEXT,size:11,family:'monospace'}}});
+    if(dxS.length) traces.push({type:'scatter',mode:'markers',x:dxS,y:dyS,name:'DII Sell',
+      marker:{symbol:'diamond',size:8,color:'#ff8a80',opacity:0.8},
+      hovertext:dtS,hoverinfo:'text',
+      hoverlabel:{bgcolor:NAVY,bordercolor:'#ff8a80',font:{color:TEXT,size:11,family:'monospace'}}});
+  }
+
+  // ── OB Shapes ───────────────────────────
+  if(OVERLAYS.ob){
+    G.order_blocks.bullish.slice(-20).forEach(ob=>{
+      const x1=dates[Math.min(ob.bar_idx+G.config.ob_extend,n-1)];
+      shapes.push({type:'rect',xref:'x',yref:'y',x0:ob.date,x1,y0:ob.bot,y1:ob.top,
+        fillcolor:'rgba(38,166,154,0.1)',line:{color:'rgba(38,166,154,0.55)',width:1}});
+      anns.push({xref:'x',yref:'y',x:ob.date,y:ob.top,
+        text:`<b>Bull OB</b> ₹${ob.bot}–₹${ob.top}`,showarrow:false,
+        font:{color:GREEN,size:8},xanchor:'left',yanchor:'bottom'});
+    });
+    G.order_blocks.bearish.slice(-20).forEach(ob=>{
+      const x1=dates[Math.min(ob.bar_idx+G.config.ob_extend,n-1)];
+      shapes.push({type:'rect',xref:'x',yref:'y',x0:ob.date,x1,y0:ob.bot,y1:ob.top,
+        fillcolor:'rgba(239,83,80,0.1)',line:{color:'rgba(239,83,80,0.55)',width:1}});
+      anns.push({xref:'x',yref:'y',x:ob.date,y:ob.bot,
+        text:`<b>Bear OB</b> ₹${ob.bot}–₹${ob.top}`,showarrow:false,
+        font:{color:RED,size:8},xanchor:'left',yanchor:'top'});
+    });
+  }
+
+  // ── Liquidity lines ─────────────────────
+  if(OVERLAYS.liq){
+    G.liq_zones.ssl.slice(-15).forEach(z=>{
+      shapes.push({type:'line',xref:'x',yref:'y',x0:z.x_start,x1:z.x_end,y0:z.price,y1:z.price,
+        line:{color:ORANGE,width:1.5,dash:'dash'}});
+      anns.push({xref:'x',yref:'y',x:z.x_end,y:z.price,
+        text:`SSL ₹${z.price}`,showarrow:false,font:{color:ORANGE,size:8},xanchor:'left',yanchor:'middle'});
+    });
+    G.liq_zones.bsl.slice(-15).forEach(z=>{
+      shapes.push({type:'line',xref:'x',yref:'y',x0:z.x_start,x1:z.x_end,y0:z.price,y1:z.price,
+        line:{color:CYAN,width:1.5,dash:'dash'}});
+      anns.push({xref:'x',yref:'y',x:z.x_end,y:z.price,
+        text:`BSL ₹${z.price}`,showarrow:false,font:{color:CYAN,size:8},xanchor:'left',yanchor:'middle'});
+    });
+  }
+
+  // ── Pressure scatter ────────────────────
+  if(OVERLAYS.pressure){
+    const bx=[],by=[],bt=[],sx=[],sy=[],st=[];
+    dates.forEach((d,i)=>{
+      const lbl=p.pressure_label[i];
+      if(lbl==='▲ BUY'){bx.push(d);by.push(c.high[i]+p.range[i]*0.25);
+        bt.push(`<b style="color:${GREEN}">▲ BUY PRESSURE</b><br>Buy: ${fmt(p.buy_pressure[i],1)}%  Sell: ${fmt(p.sell_pressure[i],1)}%<br>Δ ${fmt(p.net_delta[i],4)}  Vol: ${fmt(p.vol_factor[i],2)}x`);}
+      else if(lbl==='▼ SELL'){sx.push(d);sy.push(c.low[i]-p.range[i]*0.25);
+        st.push(`<b style="color:${RED}">▼ SELL PRESSURE</b><br>Buy: ${fmt(p.buy_pressure[i],1)}%  Sell: ${fmt(p.sell_pressure[i],1)}%<br>Δ ${fmt(p.net_delta[i],4)}  Vol: ${fmt(p.vol_factor[i],2)}x`);}
+    });
+    if(bx.length) traces.push({type:'scatter',mode:'text',x:bx,y:by,text:Array(bx.length).fill('▲'),
+      textfont:{color:GREEN,size:8},hovertext:bt,hoverinfo:'text',name:'Buy Signal',
+      hoverlabel:{bgcolor:NAVY,bordercolor:GREEN,font:{color:TEXT,size:11,family:'monospace'}}});
+    if(sx.length) traces.push({type:'scatter',mode:'text',x:sx,y:sy,text:Array(sx.length).fill('▼'),
+      textfont:{color:RED,size:8},hovertext:st,hoverinfo:'text',name:'Sell Signal',
+      hoverlabel:{bgcolor:NAVY,bordercolor:RED,font:{color:TEXT,size:11,family:'monospace'}}});
+  }
+
+  const layout={...baseLayout(),
+    margin:{t:10,b:4,l:8,r:72},
+    xaxis:{...xAx(false)},
+    yaxis:{...yAx('₹')},
+    shapes,annotations:anns,
+    legend:{bgcolor:'rgba(13,17,23,0.85)',bordercolor:'#2d3748',borderwidth:1,
+      font:{color:TEXT,size:9},x:0.005,y:0.998,xanchor:'left',yanchor:'top',
+      tracegroupgap:2},
+    dragmode:'pan',
+    title:{text:`<b>${CUR_SYMBOL}</b>  <span style="color:#666;font-size:10px">${CUR_INTERVAL} · ${CUR_PERIOD}</span>`,
+      font:{color:TEXT,size:13},x:0.01,xanchor:'left',pad:{t:4}}
   };
-
-  // ── Shapes: OB boxes + liquidity lines ───────
-  const shapes = [];
-  const annotations = [];
-
-  // Bullish OBs
-  G.order_blocks.bullish.slice(-15).forEach(ob => {
-    shapes.push({
-      type: "rect", xref: "x", yref: "y",
-      x0: ob.date, x1: dates[Math.min(ob.bar_idx + G.config.ob_extend, n-1)],
-      y0: ob.bot,  y1: ob.top,
-      fillcolor: "rgba(38,166,154,0.12)",
-      line: { color: "rgba(38,166,154,0.6)", width: 1 },
-    });
-    annotations.push({
-      xref: "x", yref: "y",
-      x: ob.date, y: ob.top,
-      text: `<b>Bull OB</b>`,
-      showarrow: false,
-      font: { color: GREEN, size: 9 },
-      xanchor: "left", yanchor: "bottom",
-    });
-  });
-
-  // Bearish OBs
-  G.order_blocks.bearish.slice(-15).forEach(ob => {
-    shapes.push({
-      type: "rect", xref: "x", yref: "y",
-      x0: ob.date, x1: dates[Math.min(ob.bar_idx + G.config.ob_extend, n-1)],
-      y0: ob.bot,  y1: ob.top,
-      fillcolor: "rgba(239,83,80,0.12)",
-      line: { color: "rgba(239,83,80,0.6)", width: 1 },
-    });
-    annotations.push({
-      xref: "x", yref: "y",
-      x: ob.date, y: ob.bot,
-      text: `<b>Bear OB</b>`,
-      showarrow: false,
-      font: { color: RED, size: 9 },
-      xanchor: "left", yanchor: "top",
-    });
-  });
-
-  // SSL lines (sell-side liquidity)
-  G.liq_zones.ssl.slice(-12).forEach(z => {
-    shapes.push({
-      type: "line", xref: "x", yref: "y",
-      x0: z.x_start, x1: z.x_end,
-      y0: z.price,   y1: z.price,
-      line: { color: ORANGE, width: 1.5, dash: "dash" },
-    });
-    annotations.push({
-      xref: "x", yref: "y",
-      x: z.x_end, y: z.price,
-      text: `SSL ₹${z.price}`,
-      showarrow: false,
-      font: { color: ORANGE, size: 8 },
-      xanchor: "left", yanchor: "middle",
-    });
-  });
-
-  // BSL lines (buy-side liquidity)
-  G.liq_zones.bsl.slice(-12).forEach(z => {
-    shapes.push({
-      type: "line", xref: "x", yref: "y",
-      x0: z.x_start, x1: z.x_end,
-      y0: z.price,   y1: z.price,
-      line: { color: CYAN, width: 1.5, dash: "dash" },
-    });
-    annotations.push({
-      xref: "x", yref: "y",
-      x: z.x_end, y: z.price,
-      text: `BSL ₹${z.price}`,
-      showarrow: false,
-      font: { color: CYAN, size: 8 },
-      xanchor: "left", yanchor: "middle",
-    });
-  });
-
-  // ── Pressure scatter (BUY/SELL/NEUT labels above candles) ──
-  const buyX = [], buyY = [], buyText = [];
-  const sellX = [], sellY = [], sellText = [];
-  dates.forEach((d, i) => {
-    const lbl = p.pressure_label[i];
-    if (lbl === "▲ BUY") {
-      buyX.push(d);
-      buyY.push(c.high[i] + p.range[i] * 0.35);
-      buyText.push(`<b style="color:${GREEN}">▲ BUY</b><br>Buy: ${p.buy_pressure[i]}%<br>Sell: ${p.sell_pressure[i]}%<br>Δ ${p.net_delta[i].toFixed(4)}<br>Vol: ${p.vol_factor[i].toFixed(2)}x`);
-    } else if (lbl === "▼ SELL") {
-      sellX.push(d);
-      sellY.push(c.low[i] - p.range[i] * 0.35);
-      sellText.push(`<b style="color:${RED}">▼ SELL</b><br>Buy: ${p.buy_pressure[i]}%<br>Sell: ${p.sell_pressure[i]}%<br>Δ ${p.net_delta[i].toFixed(4)}<br>Vol: ${p.vol_factor[i].toFixed(2)}x`);
-    }
-  });
-
-  const buyScatter = {
-    type: "scatter", mode: "text", x: buyX, y: buyY,
-    text: Array(buyX.length).fill("▲"),
-    textfont: { color: GREEN, size: 8 },
-    hovertext: buyText, hoverinfo: "text",
-    hoverlabel: { bgcolor: NAVY, bordercolor: GREEN, font: { color: TEXT, size: 11, family: "monospace" } },
-    name: "Buy Signal", showlegend: true,
-  };
-
-  const sellScatter = {
-    type: "scatter", mode: "text", x: sellX, y: sellY,
-    text: Array(sellX.length).fill("▼"),
-    textfont: { color: RED, size: 8 },
-    hovertext: sellText, hoverinfo: "text",
-    hoverlabel: { bgcolor: NAVY, bordercolor: RED, font: { color: TEXT, size: 11, family: "monospace" } },
-    name: "Sell Signal", showlegend: true,
-  };
-
-  const layout = priceLayout(shapes, annotations);
-  Plotly.react("chart-price", [candleTrace, buyScatter, sellScatter], layout, plotlyConfig());
+  Plotly.react('chart-price',traces,layout,pltCfg());
 }
 </script>
 
 <script>
-// ═══════════════════════════════════════════════
-//  DELTA CHART
-// ═══════════════════════════════════════════════
-function renderDelta() {
-  const p = G.pressure;
-  const dates = G.candles.dates;
-
-  const colors = p.net_delta.map(d => d >= 0 ? "rgba(38,166,154,0.8)" : "rgba(239,83,80,0.8)");
-
-  const hoverText = dates.map((d, i) => [
+// ══════════════════════════════════════════
+// DELTA PANEL
+// ══════════════════════════════════════════
+function renderDelta(){
+  const p=G.pressure, dates=G.candles.dates;
+  const cols=p.net_delta.map(d=>d>=0?'rgba(38,166,154,0.8)':'rgba(239,83,80,0.8)');
+  const hov=dates.map((d,i)=>[
     `<b>${d}</b>`,
-    `<b>Net Delta</b>  ${p.net_delta[i].toFixed(4)}`,
-    `<b>Delta MA</b>   ${p.delta_ma[i].toFixed(4)}`,
-    `<b>Buy press</b>  ${p.buy_pressure[i].toFixed(1)}%`,
-    `<b>Sell press</b> ${p.sell_pressure[i].toFixed(1)}%`,
-    `<b>Vol ratio</b>  ${p.vol_factor[i].toFixed(2)}x`,
+    `<b>Net Δ</b>     <span style="color:${p.net_delta[i]>=0?GREEN:RED}">${fmt(p.net_delta[i],4)}</span>`,
+    `<b>Delta MA</b>  ${fmt(p.delta_ma[i],4)}`,
+    `<b>Buy</b>  ${fmt(p.buy_pressure[i],1)}%  |  <b>Sell</b> ${fmt(p.sell_pressure[i],1)}%`,
+    `<b>Vol ratio</b> ${fmt(p.vol_factor[i],2)}x`,
     `<b>Bias</b> <span style="color:${biasColor(p.pressure_label[i])}">${p.pressure_label[i]}</span>`,
-  ].join("<br>"));
-
-  const deltaBar = {
-    type: "bar", x: dates, y: p.net_delta,
-    name: "Net Delta",
-    marker: { color: colors },
-    hovertext: hoverText, hoverinfo: "text",
-    hoverlabel: { bgcolor: NAVY, bordercolor: GRID, font: { color: TEXT, size: 11, family: "monospace" } },
-  };
-
-  const maLine = {
-    type: "scatter", mode: "lines",
-    x: dates, y: p.delta_ma,
-    name: "Delta MA",
-    line: { color: PURPLE, width: 1.5, dash: "dot" },
-    hoverinfo: "skip",
-  };
-
-  const zeroLine = {
-    type: "scatter", mode: "lines",
-    x: [dates[0], dates[dates.length-1]], y: [0, 0],
-    line: { color: "#444", width: 1 },
-    hoverinfo: "skip", showlegend: false,
-  };
-
-  const layout = {
-    ...baseLayout(),
-    title: { text: "Net Delta  (Buy − Sell Pressure)", font: { color: "#888", size: 10 }, x: 0.01 },
-    margin: { t: 24, b: 28, l: 60, r: 20 },
-    showlegend: false,
-    xaxis: { ...xAxis(), showticklabels: true, tickfont: { color: "#666", size: 8 } },
-    yaxis: { ...yAxis(), zeroline: false },
-    bargap: 0.15,
-  };
-
-  Plotly.react("chart-delta", [zeroLine, deltaBar, maLine], layout, plotlyConfig());
+  ].join('<br>'));
+  const traces=[
+    {type:'bar',x:dates,y:p.net_delta,name:'Net Δ',marker:{color:cols},
+      hovertext:hov,hoverinfo:'text',hoverlabel:{bgcolor:NAVY,bordercolor:GRID,font:{color:TEXT,size:11,family:'monospace'}}},
+    {type:'scatter',mode:'lines',x:dates,y:p.delta_ma,name:'Delta MA',
+      line:{color:PURPLE,width:1.5,dash:'dot'},hoverinfo:'skip'},
+  ];
+  Plotly.react('chart-delta',traces,{...baseLayout(),
+    title:{text:'Net Delta',font:{color:'#555',size:9},x:0.005},
+    margin:{t:18,b:22,l:8,r:72},showlegend:false,bargap:0.15,
+    xaxis:{...xAx()},yaxis:{...yAx('',false),tickprefix:''},
+  },pltCfg());
 }
 
-// ═══════════════════════════════════════════════
-//  VOLUME CHART
-// ═══════════════════════════════════════════════
-function renderVolume() {
-  const c = G.candles;
-  const p = G.pressure;
-  const dates = c.dates;
-
-  const colors = dates.map((_, i) => c.close[i] >= c.open[i] ? "rgba(38,166,154,0.6)" : "rgba(239,83,80,0.6)");
-
-  const hoverText = dates.map((d, i) => [
+// ══════════════════════════════════════════
+// VOLUME PANEL
+// ══════════════════════════════════════════
+function renderVolume(){
+  const c=G.candles, p=G.pressure, dates=c.dates;
+  const cols=dates.map((_,i)=>c.close[i]>=c.open[i]?'rgba(38,166,154,0.65)':'rgba(239,83,80,0.65)');
+  // Volume MA
+  const volArr=c.volume.map(v=>v||0);
+  const volMa=volArr.map((_,i)=>{
+    const sl=volArr.slice(Math.max(0,i-19),i+1);
+    return Math.round(sl.reduce((a,b)=>a+b,0)/sl.length);
+  });
+  const hov=dates.map((d,i)=>[
     `<b>${d}</b>`,
-    `<b>Volume</b>     ${c.volume[i].toLocaleString()}`,
-    `<b>Vol ratio</b>  ${p.vol_factor[i].toFixed(2)}x avg`,
-  ].join("<br>"));
-
-  const volTrace = {
-    type: "bar", x: dates, y: c.volume,
-    name: "Volume",
-    marker: { color: colors },
-    hovertext: hoverText, hoverinfo: "text",
-    hoverlabel: { bgcolor: NAVY, bordercolor: GRID, font: { color: TEXT, size: 11, family: "monospace" } },
-  };
-
-  const layout = {
-    ...baseLayout(),
-    title: { text: "Volume", font: { color: "#888", size: 10 }, x: 0.01 },
-    margin: { t: 20, b: 30, l: 60, r: 20 },
-    showlegend: false,
-    xaxis: { ...xAxis(), showticklabels: true, tickfont: { color: "#666", size: 8 } },
-    yaxis: { ...yAxis(), zeroline: false },
-    bargap: 0.15,
-  };
-
-  Plotly.react("chart-volume", [volTrace], layout, plotlyConfig());
+    `<b>Volume</b>   ${fmtVol(c.volume[i])}`,
+    `<b>Vol MA20</b> ${fmtVol(volMa[i])}`,
+    `<b>Ratio</b>    ${fmt(p.vol_factor[i],2)}x avg`,
+  ].join('<br>'));
+  const traces=[
+    {type:'bar',x:dates,y:c.volume,name:'Volume',marker:{color:cols},
+      hovertext:hov,hoverinfo:'text',hoverlabel:{bgcolor:NAVY,bordercolor:GRID,font:{color:TEXT,size:11,family:'monospace'}}},
+    {type:'scatter',mode:'lines',x:dates,y:volMa,name:'Vol MA20',
+      line:{color:'rgba(255,213,79,0.7)',width:1.2},hoverinfo:'skip'},
+  ];
+  Plotly.react('chart-volume',traces,{...baseLayout(),
+    title:{text:'Volume',font:{color:'#555',size:9},x:0.005},
+    margin:{t:18,b:22,l:8,r:72},showlegend:false,bargap:0.15,
+    xaxis:{...xAx()},yaxis:{...yAx('',false),tickprefix:''},
+  },pltCfg());
 }
 
-// ═══════════════════════════════════════════════
-//  DISTRIBUTION PIE
-// ═══════════════════════════════════════════════
-function renderDistPie() {
-  const d = G.dashboard;
-  const trace = {
-    type: "pie",
-    labels: ["▲ BUY", "▼ SELL", "◆ NEUT"],
-    values: [d.dist_buy, d.dist_sell, d.dist_neut],
-    marker: { colors: [GREEN, RED, "#666"] },
-    textfont: { color: TEXT, size: 10 },
-    hovertemplate: "<b>%{label}</b><br>%{value} bars (%{percent})<extra></extra>",
-    hoverlabel: { bgcolor: NAVY, font: { color: TEXT, size: 11, family: "monospace" } },
-    hole: 0.45,
-  };
-  const layout = {
-    paper_bgcolor: "transparent", plot_bgcolor: "transparent",
-    margin: { t: 4, b: 4, l: 4, r: 4 },
-    showlegend: false,
-    font: { color: TEXT, size: 9 },
-  };
-  Plotly.react("dist-chart", [trace], layout, { displayModeBar: false, responsive: true });
+// ══════════════════════════════════════════
+// RSI PANEL
+// ══════════════════════════════════════════
+function renderRSI(){
+  const t=G.technicals, dates=G.candles.dates;
+  const rsiCols=t.rsi.map(v=>v>=70?RED:v<=30?GREEN:'#42a5f5');
+  const hov=dates.map((d,i)=>[
+    `<b>${d}</b>`,
+    `<b>RSI(14)</b>  ${fmt(t.rsi[i],2)}`,
+    t.rsi[i]>=70?`<span style="color:${RED}">⚠ Overbought (≥70)</span>`:
+    t.rsi[i]<=30?`<span style="color:${GREEN}">⚠ Oversold (≤30)</span>`:`Neutral`,
+  ].join('<br>'));
+  const shapes=[
+    {type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:70,y1:70,line:{color:'rgba(239,83,80,0.4)',width:1,dash:'dot'}},
+    {type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:30,y1:30,line:{color:'rgba(38,166,154,0.4)',width:1,dash:'dot'}},
+    {type:'line',xref:'paper',yref:'y',x0:0,x1:1,y0:50,y1:50,line:{color:'rgba(255,255,255,0.1)',width:1}},
+  ];
+  Plotly.react('chart-rsi',[
+    {type:'scatter',mode:'lines',x:dates,y:t.rsi,name:'RSI',
+      line:{color:'#42a5f5',width:1.5},
+      hovertext:hov,hoverinfo:'text',
+      hoverlabel:{bgcolor:NAVY,bordercolor:'#42a5f5',font:{color:TEXT,size:11,family:'monospace'}}},
+  ],{...baseLayout(),shapes,
+    title:{text:'RSI (14)',font:{color:'#555',size:9},x:0.005},
+    margin:{t:18,b:22,l:8,r:72},showlegend:false,
+    xaxis:{...xAx()},yaxis:{...yAx('',false),tickprefix:'',range:[0,100]},
+  },pltCfg());
+}
+
+// ══════════════════════════════════════════
+// MACD PANEL
+// ══════════════════════════════════════════
+function renderMACD(){
+  const t=G.technicals, dates=G.candles.dates;
+  const histCols=t.macd_hist.map(v=>v>=0?'rgba(38,166,154,0.75)':'rgba(239,83,80,0.75)');
+  const hov=dates.map((d,i)=>[
+    `<b>${d}</b>`,
+    `<b>MACD</b>    ${fmt(t.macd[i],4)}`,
+    `<b>Signal</b>  ${fmt(t.macd_signal[i],4)}`,
+    `<b>Hist</b>    <span style="color:${t.macd_hist[i]>=0?GREEN:RED}">${fmt(t.macd_hist[i],4)}</span>`,
+  ].join('<br>'));
+  Plotly.react('chart-macd',[
+    {type:'bar',x:dates,y:t.macd_hist,name:'Histogram',marker:{color:histCols},
+      hovertext:hov,hoverinfo:'text',
+      hoverlabel:{bgcolor:NAVY,bordercolor:GRID,font:{color:TEXT,size:11,family:'monospace'}}},
+    {type:'scatter',mode:'lines',x:dates,y:t.macd,name:'MACD',
+      line:{color:'#42a5f5',width:1.5},hoverinfo:'skip'},
+    {type:'scatter',mode:'lines',x:dates,y:t.macd_signal,name:'Signal',
+      line:{color:ORANGE,width:1.2,dash:'dot'},hoverinfo:'skip'},
+  ],{...baseLayout(),
+    title:{text:'MACD (12,26,9)',font:{color:'#555',size:9},x:0.005},
+    margin:{t:18,b:22,l:8,r:72},showlegend:false,bargap:0.2,
+    xaxis:{...xAx()},yaxis:{...yAx('',false),tickprefix:''},
+  },pltCfg());
+}
+
+// ══════════════════════════════════════════
+// DISTRIBUTION PIE
+// ══════════════════════════════════════════
+function renderDistPie(){
+  const d=G.dashboard;
+  const total=d.dist_buy+d.dist_sell+d.dist_neut;
+  Plotly.react('dist-chart',[{
+    type:'pie',labels:['▲ BUY','▼ SELL','◆ NEUT'],values:[d.dist_buy,d.dist_sell,d.dist_neut],
+    marker:{colors:[GREEN,RED,'#555']},hole:0.5,
+    textinfo:'none',
+    hovertemplate:'<b>%{label}</b><br>%{value} bars<br>%{percent}<extra></extra>',
+    hoverlabel:{bgcolor:NAVY,font:{color:TEXT,size:11,family:'monospace'}},
+  }],{paper_bgcolor:'transparent',plot_bgcolor:'transparent',
+    margin:{t:4,b:4,l:4,r:4},showlegend:false,font:{color:TEXT,size:9}},
+  {displayModeBar:false,responsive:true});
+  // Text legend
+  const lg=document.getElementById('dist-legend');
+  lg.innerHTML=[
+    `<span style="color:${GREEN}">▲ BUY</span> ${d.dist_buy} (${total?Math.round(d.dist_buy/total*100):0}%)`,
+    `<span style="color:${RED}">▼ SELL</span> ${d.dist_sell} (${total?Math.round(d.dist_sell/total*100):0}%)`,
+    `<span style="color:#888">◆ NEUT</span> ${d.dist_neut} (${total?Math.round(d.dist_neut/total*100):0}%)`,
+  ].join('&nbsp;&nbsp;');
 }
 </script>
 
 <script>
-// ═══════════════════════════════════════════════
-//  LAYOUT / CONFIG HELPERS
-// ═══════════════════════════════════════════════
-function baseLayout() {
-  return {
-    paper_bgcolor: BG,
-    plot_bgcolor:  BG,
-    font: { color: TEXT, family: "'Inter', 'Segoe UI', sans-serif", size: 11 },
-    hovermode: "x unified",
-    hoverdistance: 20,
-    spikedistance: 40,
-  };
+// ══════════════════════════════════════════
+// SIDEBAR UPDATE
+// ══════════════════════════════════════════
+function updateSidebar(){
+  const d=G.dashboard, f=G.fii_dii;
+  const chg=d.last_close-d.last_open;
+  const pct=((chg/d.last_open)*100).toFixed(2);
+  const col=chg>=0?GREEN:RED;
+
+  document.getElementById('db-symbol').textContent=d.symbol;
+  document.getElementById('db-date').textContent=d.date_to;
+  document.getElementById('db-open').textContent=`₹${fmt(d.last_open)}`;
+  document.getElementById('db-high').textContent=`₹${fmt(d.last_high)}`;
+  document.getElementById('db-low').textContent=`₹${fmt(d.last_low)}`;
+  document.getElementById('db-close').innerHTML=
+    `<span style="color:${col}">₹${fmt(d.last_close)}<br>${chg>=0?'+':''}${fmt(chg)} (${pct}%)</span>`;
+  document.getElementById('db-volume').textContent=fmtVol(d.last_volume);
+  document.getElementById('db-atr').textContent=`₹${fmt(d.atr)}`;
+
+  const bEl=document.getElementById('db-bias');
+  bEl.textContent=d.pressure_bias; bEl.style.color=biasColor(d.pressure_bias);
+  document.getElementById('db-buy').textContent=`${d.buy_pct}%`;
+  document.getElementById('db-sell').textContent=`${d.sell_pct}%`;
+  document.getElementById('bar-buy').style.width=`${Math.min(d.buy_pct,100)}%`;
+  document.getElementById('bar-sell').style.width=`${Math.min(d.sell_pct,100)}%`;
+  const dEl=document.getElementById('db-delta');
+  dEl.textContent=fmt(d.net_delta,4); dEl.style.color=d.net_delta>=0?GREEN:RED;
+  document.getElementById('db-vol').textContent=`${d.vol_ratio}x`;
+
+  // Technicals
+  const rsiEl=document.getElementById('db-rsi');
+  rsiEl.textContent=fmt(d.rsi,1);
+  rsiEl.style.color=d.rsi>=70?RED:d.rsi<=30?GREEN:TEXT;
+  const macdEl=document.getElementById('db-macd');
+  macdEl.textContent=fmt(d.macd,4); macdEl.style.color=d.macd>=0?GREEN:RED;
+  document.getElementById('db-ma20').textContent=`₹${fmt(d.ma20)}`;
+  document.getElementById('db-ma50').textContent=`₹${fmt(d.ma50)}`;
+  document.getElementById('db-ma200').textContent=`₹${fmt(d.ma200)}`;
+  document.getElementById('db-bbu').textContent=`₹${fmt(d.bb_upper)}`;
+  document.getElementById('db-bbl').textContent=`₹${fmt(d.bb_lower)}`;
+
+  // FII / DII
+  const fNet=d.fii_net_last, dNet=d.dii_net_last;
+  const fEl=document.getElementById('db-fii');
+  fEl.innerHTML=fNet>0?`<span style="color:#00e5ff">▲ BUY ${fNet}</span>`:
+                fNet<0?`<span style="color:#ff5252">▼ SELL ${Math.abs(fNet)}</span>`:`<span style="color:#666">◆ NEUT</span>`;
+  const dEl2=document.getElementById('db-dii');
+  dEl2.innerHTML=dNet>0?`<span style="color:#69f0ae">▲ BUY ${dNet}</span>`:
+                 dNet<0?`<span style="color:#ff8a80">▼ SELL ${Math.abs(dNet)}</span>`:`<span style="color:#666">◆ NEUT</span>`;
+
+  // Zones
+  document.getElementById('db-bull-ob').textContent=d.bull_obs_count;
+  document.getElementById('db-bear-ob').textContent=d.bear_obs_count;
+  document.getElementById('db-ssl').textContent=d.ssl_count;
+  document.getElementById('db-bsl').textContent=d.bsl_count;
+  document.getElementById('db-liq-hi').innerHTML=d.liq_above?`<span style="color:${ORANGE}">SSL ⚠</span>`:'—';
+  document.getElementById('db-liq-lo').innerHTML=d.liq_below?`<span style="color:${CYAN}">BSL ⚠</span>`:'—';
 }
 
-function xAxis() {
-  return {
-    type: "category",
-    showgrid: true, gridcolor: GRID, gridwidth: 1,
-    zeroline: false,
-    showspikes: true, spikecolor: "#555", spikethickness: 1, spikedash: "dot",
-    tickcolor: "#444", linecolor: "#333",
-    rangeslider: { visible: false },
-  };
-}
-
-function yAxis() {
-  return {
-    showgrid: true, gridcolor: GRID, gridwidth: 1,
-    zeroline: false,
-    showspikes: true, spikecolor: "#555", spikethickness: 1, spikedash: "dot",
-    tickcolor: "#444", linecolor: "#333",
-    tickprefix: "₹",
-    side: "right",
-  };
-}
-
-function priceLayout(shapes, annotations) {
-  return {
-    ...baseLayout(),
-    title: { text: "", },
-    margin: { t: 10, b: 8, l: 10, r: 70 },
-    xaxis: {
-      ...xAxis(),
-      showticklabels: false,
-    },
-    yaxis: { ...yAxis() },
-    shapes,
-    annotations,
-    legend: {
-      bgcolor: "rgba(13,17,23,0.8)", bordercolor: GRID, borderwidth: 1,
-      font: { color: TEXT, size: 10 },
-      x: 0.01, y: 0.99, xanchor: "left", yanchor: "top",
-    },
-    dragmode: "pan",
-  };
-}
-
-function plotlyConfig() {
-  return {
-    responsive: true,
-    displayModeBar: true,
-    modeBarButtonsToRemove: ["select2d", "lasso2d", "autoScale2d"],
-    modeBarButtonsToAdd: [],
-    scrollZoom: true,
-    displaylogo: false,
-    toImageButtonOptions: { format: "png", scale: 2 },
-  };
-}
-
-function biasColor(label) {
-  if (label === "▲ BUY")  return GREEN;
-  if (label === "▼ SELL") return RED;
-  return "#888";
-}
-
-// ═══════════════════════════════════════════════
-//  SIDEBAR UPDATE
-// ═══════════════════════════════════════════════
-function updateSidebar() {
-  const d = G.dashboard;
-
-  document.getElementById("db-symbol").textContent = d.symbol;
-  document.getElementById("db-date").textContent   = d.date_to;
-
-  const chg    = d.last_close - d.last_open;
-  const chgPct = ((chg / d.last_open) * 100).toFixed(2);
-  const col    = chg >= 0 ? GREEN : RED;
-
-  document.getElementById("db-open").innerHTML  = `₹${d.last_open}`;
-  document.getElementById("db-high").innerHTML  = `₹${d.last_high}`;
-  document.getElementById("db-low").innerHTML   = `₹${d.last_low}`;
-  document.getElementById("db-close").innerHTML =
-    `<span style="color:${col}">₹${d.last_close} (${chg>=0?"+":""}${chg.toFixed(2)}, ${chgPct}%)</span>`;
-
-  const biasEl = document.getElementById("db-bias");
-  biasEl.textContent = d.pressure_bias;
-  biasEl.style.color = biasColor(d.pressure_bias);
-  biasEl.style.fontWeight = "bold";
-
-  document.getElementById("db-buy").textContent  = `${d.buy_pct}%`;
-  document.getElementById("db-sell").textContent = `${d.sell_pct}%`;
-  document.getElementById("bar-buy").style.width  = `${Math.min(d.buy_pct, 100)}%`;
-  document.getElementById("bar-sell").style.width = `${Math.min(d.sell_pct, 100)}%`;
-
-  const deltaEl = document.getElementById("db-delta");
-  deltaEl.textContent = d.net_delta.toFixed(4);
-  deltaEl.style.color = d.net_delta >= 0 ? GREEN : RED;
-
-  document.getElementById("db-vol").textContent    = `${d.vol_ratio}x`;
-  document.getElementById("db-bull-ob").textContent = d.bull_obs_count;
-  document.getElementById("db-bear-ob").textContent = d.bear_obs_count;
-  document.getElementById("db-ssl").textContent    = d.ssl_count;
-  document.getElementById("db-bsl").textContent    = d.bsl_count;
-
-  document.getElementById("db-liq-hi").innerHTML =
-    d.liq_above ? `<span style="color:${ORANGE}">SSL ⚠</span>` : "—";
-  document.getElementById("db-liq-lo").innerHTML =
-    d.liq_below ? `<span style="color:${CYAN}">BSL ⚠</span>` : "—";
-}
-
-// ═══════════════════════════════════════════════
-//  STATUS / LOADING
-// ═══════════════════════════════════════════════
-function setStatus(type, msg) {
-  const el = document.getElementById("status-pill");
-  el.textContent = msg;
-  el.className = `status-pill status-${type}`;
-}
-
-function showLoading(show) {
-  document.getElementById("loading-overlay").style.display = show ? "flex" : "none";
-}
-
-// ═══════════════════════════════════════════════
-//  SYNC ZOOM across all 3 charts
-// ═══════════════════════════════════════════════
-["chart-price", "chart-delta", "chart-volume"].forEach(id => {
-  document.getElementById(id).on?.("plotly_relayout", ev => {
-    if (!ev["xaxis.range[0]"]) return;
-    const update = { "xaxis.range[0]": ev["xaxis.range[0]"], "xaxis.range[1]": ev["xaxis.range[1]"] };
-    ["chart-price","chart-delta","chart-volume"].forEach(other => {
-      if (other !== id) Plotly.relayout(other, update).catch(()=>{});
+// ══════════════════════════════════════════
+// ZOOM SYNC
+// ══════════════════════════════════════════
+function bindZoomSync(){
+  const ids=['chart-price','chart-delta','chart-volume','chart-rsi','chart-macd'];
+  ids.forEach(id=>{
+    const el=document.getElementById(id);
+    if(!el) return;
+    el.on('plotly_relayout',ev=>{
+      const r0=ev['xaxis.range[0]'], r1=ev['xaxis.range[1]'];
+      if(r0==null&&ev['xaxis.autorange']==null) return;
+      const upd=r0!=null?{'xaxis.range[0]':r0,'xaxis.range[1]':r1}:{'xaxis.autorange':true};
+      ids.forEach(other=>{
+        if(other!==id){
+          const o=document.getElementById(other);
+          if(o&&o.data) Plotly.relayout(other,upd).catch(()=>{});
+        }
+      });
     });
   });
-});
-
-// ═══════════════════════════════════════════════
-//  BOOT
-// ═══════════════════════════════════════════════
-window.addEventListener("DOMContentLoaded", () => loadData());
+}
 </script>
+
 </body>
 </html>
