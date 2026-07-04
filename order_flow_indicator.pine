@@ -1,0 +1,251 @@
+// ============================================================
+// Order Flow Indicator — Pine Script v6
+// Detects: Order Blocks | Liquidity Zones | Buy/Sell Pressure
+// NOTE: Pine Script cannot access live order book data.
+//       This indicator uses price action + volume as a proxy.
+// ============================================================
+
+//@version=6
+indicator("Order Flow — Blocks & Pressure", overlay=true, max_boxes_count=100, max_lines_count=100, max_labels_count=200)
+
+// ─────────────────────────────────────────
+// INPUTS
+// ─────────────────────────────────────────
+grp_ob      = "Order Blocks"
+ob_len      = input.int(10,   "Swing Length for OB Detection",    minval=3,  maxval=50,  group=grp_ob)
+ob_extend   = input.int(20,   "Extend OB Right (bars)",           minval=1,  maxval=200, group=grp_ob)
+ob_bull_col = input.color(color.new(color.green, 75), "Bullish OB Color", group=grp_ob)
+ob_bear_col = input.color(color.new(color.red,   75), "Bearish OB Color", group=grp_ob)
+ob_show     = input.bool(true, "Show Order Blocks",                group=grp_ob)
+
+grp_liq     = "Liquidity Zones"
+liq_len     = input.int(20,   "Lookback for Equal H/L",           minval=5,  maxval=100, group=grp_liq)
+liq_thresh  = input.float(0.1,"Threshold % for Equal H/L",        minval=0.01, maxval=1.0, step=0.01, group=grp_liq)
+liq_col     = input.color(color.new(color.orange, 60), "Liquidity Zone Color", group=grp_liq)
+liq_show    = input.bool(true, "Show Liquidity Zones",             group=grp_liq)
+
+grp_pres    = "Buy/Sell Pressure"
+pres_show   = input.bool(true, "Show Pressure Labels",             group=grp_pres)
+pres_vol    = input.bool(true, "Use Volume in Pressure Calc",      group=grp_pres)
+delta_bars  = input.int(14,    "Pressure MA Length",               minval=2, maxval=50,  group=grp_pres)
+
+grp_dash    = "Dashboard"
+dash_show   = input.bool(true, "Show Info Table",                  group=grp_dash)
+
+// ─────────────────────────────────────────
+// HELPERS
+// ─────────────────────────────────────────
+bull_candle = close > open
+bear_candle = close < open
+doji_candle = math.abs(close - open) <= (high - low) * 0.1
+
+body_size   = math.abs(close - open)
+total_range = high - low == 0 ? 0.0001 : high - low
+
+// Upper wick = distance from top of body to high
+upper_wick  = bull_candle ? high - close : high - open
+// Lower wick = distance from bottom of body to low
+lower_wick  = bull_candle ? open - low   : close - low
+
+// ─────────────────────────────────────────
+// BUY / SELL PRESSURE (Delta Proxy)
+// ─────────────────────────────────────────
+// Buying pressure: large body + small upper wick + closes near high
+// Selling pressure: large body + small lower wick + closes near low
+
+buy_pressure_raw  = (body_size / total_range) * (bull_candle ? 1.0 : 0.0) + (lower_wick / total_range) * 0.5
+sell_pressure_raw = (body_size / total_range) * (bear_candle ? 1.0 : 0.0) + (upper_wick / total_range) * 0.5
+
+// Scale by volume if available and enabled
+vol_factor    = pres_vol and not na(volume) and volume > 0 ? volume / ta.sma(volume, delta_bars) : 1.0
+buy_pressure  = buy_pressure_raw  * vol_factor
+sell_pressure = sell_pressure_raw * vol_factor
+
+// Net delta: positive = buying dominates, negative = selling dominates
+net_delta     = buy_pressure - sell_pressure
+delta_ma      = ta.sma(net_delta, delta_bars)
+
+// Pressure bias string
+pressure_str  = net_delta > delta_ma * 1.5 ? "▲ BUY"  :
+                net_delta < delta_ma * -1.5 ? "▼ SELL" : "◆ NEUT"
+pressure_col  = net_delta > delta_ma * 1.5 ? color.lime :
+                net_delta < delta_ma * -1.5 ? color.red  : color.gray
+
+// ─────────────────────────────────────────
+// PRESSURE LABEL ON EACH CANDLE
+// ─────────────────────────────────────────
+if pres_show and barstate.isconfirmed
+    lbl_y  = net_delta > 0 ? high + (total_range * 0.3) : low - (total_range * 0.3)
+    lbl_sty = net_delta > 0 ? label.style_label_down : label.style_label_up
+    label.new(bar_index, lbl_y,
+              text       = pressure_str,
+              color      = color.new(pressure_col, 60),
+              textcolor  = color.white,
+              style      = lbl_sty,
+              size       = size.tiny)
+
+// ─────────────────────────────────────────
+// ORDER BLOCK DETECTION
+// ─────────────────────────────────────────
+// Bullish OB: last bearish candle before a strong bullish impulse
+// Bearish OB: last bullish candle before a strong bearish impulse
+
+// Swing high/low using pivot detection
+ph = ta.pivothigh(high, ob_len, ob_len)
+pl = ta.pivotlow(low,   ob_len, ob_len)
+
+// Detect impulse moves
+bull_impulse = close > ta.highest(high, ob_len)[1]   // breakout above recent high
+bear_impulse = close < ta.lowest(low,   ob_len)[1]   // breakout below recent low
+
+// Track last bearish candle before bullish impulse → Bullish OB
+var float  bull_ob_top    = na
+var float  bull_ob_bot    = na
+var int    bull_ob_bar    = na
+var box    bull_ob_box    = na
+
+var float  bear_ob_top    = na
+var float  bear_ob_bot    = na
+var int    bear_ob_bar    = na
+var box    bear_ob_box    = na
+
+// Find the most recent bearish candle for bullish OB
+if bull_impulse and bear_candle[1]
+    bull_ob_top := high[1]
+    bull_ob_bot := low[1]
+    bull_ob_bar := bar_index - 1
+    if ob_show
+        bull_ob_box := box.new(
+             left        = bull_ob_bar,
+             top         = bull_ob_top,
+             right       = bar_index + ob_extend,
+             bottom      = bull_ob_bot,
+             bgcolor     = ob_bull_col,
+             border_color= color.green,
+             border_width = 1)
+
+// Find the most recent bullish candle for bearish OB
+if bear_impulse and bull_candle[1]
+    bear_ob_top := high[1]
+    bear_ob_bot := low[1]
+    bear_ob_bar := bar_index - 1
+    if ob_show
+        bear_ob_box := box.new(
+             left        = bear_ob_bar,
+             top         = bear_ob_top,
+             right       = bar_index + ob_extend,
+             bottom      = bear_ob_bot,
+             bgcolor     = ob_bear_col,
+             border_color= color.red,
+             border_width = 1)
+
+// ─────────────────────────────────────────
+// LIQUIDITY ZONES (Equal Highs / Equal Lows)
+// ─────────────────────────────────────────
+// Equal highs = sell-side liquidity (stops above)
+// Equal lows  = buy-side liquidity  (stops below)
+
+liq_threshold_pts = close * (liq_thresh / 100)
+
+// Check for equal highs in lookback window
+highest_in_range = ta.highest(high, liq_len)
+lowest_in_range  = ta.lowest(low,   liq_len)
+
+// Count how many highs are within threshold of the highest
+eq_high_count = 0
+eq_low_count  = 0
+for i = 0 to liq_len - 1
+    if math.abs(high[i] - highest_in_range) <= liq_threshold_pts
+        eq_high_count += 1
+    if math.abs(low[i]  - lowest_in_range)  <= liq_threshold_pts
+        eq_low_count  += 1
+
+is_eq_high = eq_high_count >= 2
+is_eq_low  = eq_low_count  >= 2
+
+// Draw liquidity lines
+if liq_show and is_eq_high and barstate.isconfirmed
+    line.new(bar_index - liq_len, highest_in_range,
+             bar_index + 5,       highest_in_range,
+             color = color.new(color.orange, 20),
+             width = 2,
+             style = line.style_dashed)
+    label.new(bar_index + 5, highest_in_range,
+              text      = "SSL 🔴",
+              color     = color.new(color.orange, 40),
+              textcolor = color.white,
+              style     = label.style_label_left,
+              size      = size.small)
+
+if liq_show and is_eq_low and barstate.isconfirmed
+    line.new(bar_index - liq_len, lowest_in_range,
+             bar_index + 5,       lowest_in_range,
+             color = color.new(color.aqua, 20),
+             width = 2,
+             style = line.style_dashed)
+    label.new(bar_index + 5, lowest_in_range,
+              text      = "BSL 🟢",
+              color     = color.new(color.aqua, 40),
+              textcolor = color.white,
+              style     = label.style_label_left,
+              size      = size.small)
+
+// ─────────────────────────────────────────
+// DASHBOARD TABLE
+// ─────────────────────────────────────────
+var table dash = table.new(position.top_right, 2, 8,
+                            bgcolor      = color.new(color.black, 60),
+                            border_color = color.gray,
+                            border_width = 1,
+                            frame_color  = color.gray,
+                            frame_width  = 1)
+
+if dash_show and barstate.islast
+    // Header
+    table.cell(dash, 0, 0, "ORDER FLOW PANEL",
+               text_color = color.white, text_size = size.small,
+               bgcolor = color.new(color.navy, 30), text_halign = text.align_center)
+    table.cell(dash, 1, 0, "VALUE",
+               text_color = color.white, text_size = size.small,
+               bgcolor = color.new(color.navy, 30), text_halign = text.align_center)
+    table.merge_cells(dash, 0, 0, 1, 0)
+    
+    // Row helpers
+    row_label(r, txt) =>
+        table.cell(dash, 0, r, txt, text_color = color.silver, text_size = size.small, text_halign = text.align_left)
+    
+    row_label(1, "Pressure Bias")
+    table.cell(dash, 1, 1, pressure_str,
+               text_color = pressure_col, text_size = size.small, text_halign = text.align_center)
+    
+    row_label(2, "Buy Pressure")
+    table.cell(dash, 1, 2, str.tostring(math.round(buy_pressure * 100, 1)) + "%",
+               text_color = color.lime, text_size = size.small, text_halign = text.align_center)
+    
+    row_label(3, "Sell Pressure")
+    table.cell(dash, 1, 3, str.tostring(math.round(sell_pressure * 100, 1)) + "%",
+               text_color = color.red, text_size = size.small, text_halign = text.align_center)
+    
+    row_label(4, "Net Delta")
+    delta_col = net_delta > 0 ? color.lime : color.red
+    table.cell(dash, 1, 4, str.tostring(math.round(net_delta, 4)),
+               text_color = delta_col, text_size = size.small, text_halign = text.align_center)
+    
+    row_label(5, "Liquidity Above")
+    table.cell(dash, 1, 5, is_eq_high ? "SSL Zone ⚠" : "—",
+               text_color = is_eq_high ? color.orange : color.gray, text_size = size.small, text_halign = text.align_center)
+    
+    row_label(6, "Liquidity Below")
+    table.cell(dash, 1, 6, is_eq_low  ? "BSL Zone ⚠" : "—",
+               text_color = is_eq_low  ? color.aqua   : color.gray, text_size = size.small, text_halign = text.align_center)
+    
+    row_label(7, "Volume Ratio")
+    table.cell(dash, 1, 7, not na(volume) ? str.tostring(math.round(vol_factor, 2)) + "x" : "N/A",
+               text_color = color.white, text_size = size.small, text_halign = text.align_center)
+
+// ─────────────────────────────────────────
+// PLOTS (secondary panel friendly values)
+// ─────────────────────────────────────────
+plot(net_delta,   title="Net Delta",    color=net_delta > 0 ? color.lime : color.red, display=display.none)
+plot(buy_pressure,  title="Buy Press",  color=color.lime,  display=display.none)
+plot(sell_pressure, title="Sell Press", color=color.red,   display=display.none)
